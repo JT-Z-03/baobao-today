@@ -4,6 +4,7 @@ import type { BackupData, BackupRecord } from '@/domain/backup/backup-types';
 import { toLocalDateKey } from '@/domain/date/local-date';
 import { MIGRATIONS, runMigrations, type MigrationDatabase } from '@/data/database/migrations';
 import { RECORDS_FINAL_OBJECT_NAMES, RECORDS_V6_OBJECT_NAMES } from '@/data/database/records-schema';
+import { SQLiteFeedingRepository } from '@/data/repositories/sqlite-feeding-repository';
 import { SQLiteRestoreRepository } from '@/data/repositories/sqlite-restore-repository';
 import { SQLiteSleepRepository } from '@/data/repositories/sqlite-sleep-repository';
 
@@ -135,6 +136,14 @@ async function verifyMigratedDatabase(
   if (photo?.photo_uri !== expectedPhoto.path) {
     throw new Error('Native migration verification changed the managed photo path');
   }
+  if (expectedVersion >= 9) {
+    const breastMilkColumn = await database.getFirstAsync<{ name: string }>(`
+      SELECT name FROM pragma_table_info('records') WHERE name='breast_milk_amount_ml'
+    `);
+    if (breastMilkColumn?.name !== 'breast_milk_amount_ml') {
+      throw new Error('Native migration verification missing breast_milk_amount_ml');
+    }
+  }
   const objects = await database.getAllAsync<{ name: string }>(`
     SELECT name FROM sqlite_schema
     WHERE tbl_name='records' AND type IN ('index','trigger') AND sql IS NOT NULL
@@ -145,6 +154,42 @@ async function verifyMigratedDatabase(
   }
   for (const required of RECORDS_V6_OBJECT_NAMES) {
     if (!names.has(required)) throw new Error(`Native migration verification missing ${required}`);
+  }
+  if (expectedVersion >= 9) {
+    const feedingRepository = new SQLiteFeedingRepository(database, async () => 'f'.repeat(64));
+    await feedingRepository.create({
+      id: 'constraint-probe-bottle',
+      clientRequestId: 'constraint-probe-bottle-request',
+      input: {
+        eventTimeMs: 1,
+        feedingType: 'bottle_breast',
+        milkAmountMl: null,
+        breastMilkAmountMl: 80,
+        leftDurationMin: null,
+        rightDurationMin: null,
+        note: null,
+      },
+      nowMs: 1,
+    });
+    const bottled = await feedingRepository.getById('constraint-probe-bottle');
+    if (bottled?.feedingType !== 'bottle_breast' || bottled.breastMilkAmountMl !== 80) {
+      throw new Error('Native FeedingRepository did not round-trip bottled breast milk');
+    }
+    await feedingRepository.delete('constraint-probe-bottle');
+
+    let invalidMixedError = '';
+    try {
+      await database.runAsync(`INSERT INTO records (
+        id, client_request_id, create_payload_hash, type, event_time_ms, record_date, sort_time_ms,
+        created_at_ms, updated_at_ms, feeding_type, milk_amount_ml
+      ) VALUES ('constraint-probe-invalid-mixed', 'constraint-probe-invalid-mixed-request', ?,
+        'feeding', 1, '1970-01-01', 1, 1, 1, 'mixed', 30)`, 'e'.repeat(64));
+    } catch (error) {
+      invalidMixedError = String(error);
+    }
+    if (!/invalid feeding fields/i.test(invalidMixedError)) {
+      throw new Error('Native migration verification accepted one-component mixed feeding');
+    }
   }
 }
 
@@ -167,6 +212,7 @@ function backupRecord(
     note: null,
     feeding_type: null,
     milk_amount_ml: null,
+    breast_milk_amount_ml: null,
     left_duration_min: null,
     right_duration_min: null,
     poop_color: null,
@@ -191,6 +237,8 @@ async function verifyRepositoryPath(database: VerificationDatabase): Promise<Rep
   }
   const feeding = { ...backupRecord('restore-feeding', 'feeding', sourceStartMs - 4, historicalRecordDate),
     feeding_type: 'formula' as const, milk_amount_ml: 60 };
+  const bottledBreast = { ...backupRecord('restore-bottle-breast', 'feeding', sourceStartMs - 5, historicalRecordDate),
+    feeding_type: 'bottle_breast' as const, breast_milk_amount_ml: 80 };
   const poop = { ...backupRecord('restore-poop', 'poop', sourceStartMs - 3, historicalRecordDate),
     poop_color: 'yellow' as const, photo_backup_entry: 'photos/restore-poop.jpg', photo_sha256: 'b'.repeat(64) };
   const pee = { ...backupRecord('restore-pee', 'pee', sourceStartMs - 2, historicalRecordDate),
@@ -202,7 +250,7 @@ async function verifyRepositoryPath(database: VerificationDatabase): Promise<Rep
   const data: BackupData = {
     baby: { id: 'restore-baby', name: 'Native Baby', birth_date: '2026-06-01',
       created_at_ms: sourceStartMs, updated_at_ms: sourceStartMs },
-    records: [feeding, poop, pee, sleep, other],
+    records: [feeding, bottledBreast, poop, pee, sleep, other],
     settings: { theme_mode: 'dark', feeding_reminder_enabled: false, feeding_reminder_interval_minutes: null },
   };
   const restoreRepository = new SQLiteRestoreRepository(database);
@@ -217,6 +265,14 @@ async function verifyRepositoryPath(database: VerificationDatabase): Promise<Rep
   if (restored?.record_date !== historicalRecordDate || restored.event_time_ms !== sourceStartMs
     || restored.sleep_start_ms !== sourceStartMs) {
     throw new Error('Native RestoreRepository did not preserve historical sleep ownership and timestamps');
+  }
+  const restoredBottledBreast = await database.getFirstAsync<{
+    feeding_type: string;
+    breast_milk_amount_ml: number | null;
+  }>(`SELECT feeding_type, breast_milk_amount_ml FROM records WHERE id='restore-bottle-breast'`);
+  if (restoredBottledBreast?.feeding_type !== 'bottle_breast'
+    || restoredBottledBreast.breast_milk_amount_ml !== 80) {
+    throw new Error('Native RestoreRepository did not restore bottled breast milk');
   }
 
   const nowMs = Date.now();
@@ -261,9 +317,9 @@ async function verifyRepositoryPath(database: VerificationDatabase): Promise<Rep
   }
 
   const count = await database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM records');
-  if (count?.count !== 6) throw new Error('Native repository verification record count differs');
+  if (count?.count !== 7) throw new Error('Native repository verification record count differs');
   return {
-    finalRecordCount: 6,
+    finalRecordCount: 7,
     restoredRecordDate: historicalRecordDate,
     normalWriteRecordDate: expectedNormalDate,
     restoreRepositoryVerified: true,
@@ -285,12 +341,12 @@ export async function verifyCriticalConstraintsInIsolatedDatabase(
     await migrate(database, { targetVersion: 7 });
     await verifyMigratedDatabase(database, 7, fixture.expectedCount);
     await migrate(database);
-    await verifyMigratedDatabase(database, 8, fixture.expectedCount);
+    await verifyMigratedDatabase(database, 9, fixture.expectedCount);
     const repositoryResult = await (dependencies.verifyRepositoryPath ?? verifyRepositoryPath)(database);
 
     await database.closeAsync();
     database = await dependencies.openDatabaseAsync(VERIFICATION_DATABASE_NAME);
-    await verifyMigratedDatabase(database, 8, repositoryResult.finalRecordCount, {
+    await verifyMigratedDatabase(database, 9, repositoryResult.finalRecordCount, {
       id: 'restore-poop',
       path: 'poop-photos/native-restored.jpg',
     });
@@ -309,7 +365,7 @@ export async function verifyCriticalConstraintsInIsolatedDatabase(
       migrationVerified: true,
       reopenedPersistenceVerified: true,
       ...repositoryResult,
-      userVersion: 8,
+      userVersion: 9,
       recordCount: repositoryResult.finalRecordCount,
     };
   } finally {

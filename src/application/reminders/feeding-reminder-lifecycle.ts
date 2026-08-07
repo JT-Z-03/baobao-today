@@ -4,8 +4,13 @@ type ReminderSynchronizer = {
 
 type AppStateSubscription = { remove(): void };
 
-export function reconcileFeedingReminderOnStartup(service: ReminderSynchronizer) {
-  return service.syncFeedingReminder({ forceReschedule: true });
+export type FeedingReminderInitializationReason = 'cold-start' | 'restore-refresh' | 'retry';
+
+export function reconcileFeedingReminderOnStartup(
+  service: ReminderSynchronizer,
+  reason: FeedingReminderInitializationReason = 'cold-start',
+) {
+  return service.syncFeedingReminder({ forceReschedule: reason !== 'restore-refresh' });
 }
 
 export function subscribeToFeedingReminderForeground(

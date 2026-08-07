@@ -14,7 +14,8 @@ const feeding: FeedingRecord = {
   id: 'feeding-1', type: 'feeding', clientRequestId: 'request-1', createPayloadHash: 'a'.repeat(64),
   eventTimeMs: nowMs - 30 * 60_000, recordDate: '2026-07-11', sortTimeMs: nowMs - 30 * 60_000,
   createdAtMs: nowMs - 30 * 60_000, updatedAtMs: nowMs - 30 * 60_000,
-  feedingType: 'formula', milkAmountMl: 60, leftDurationMin: null, rightDurationMin: null, note: null,
+  feedingType: 'bottle_breast', milkAmountMl: null, breastMilkAmountMl: 80,
+  leftDurationMin: null, rightDurationMin: null, note: null,
 };
 const scheduledForMs = feeding.eventTimeMs + 120 * 60_000;
 
@@ -24,7 +25,7 @@ function settingsRepository(overrides: Partial<FeedingReminderSettingsRepository
     permissionPrompted: false, syncErrorCode: null, updatedAtMs: 0,
   };
   return {
-    get: jest.fn(async () => settings),
+    get: jest.fn(async () => ({ ...settings })),
     setInterval: jest.fn(async (intervalMinutes: number | null) => {
       settings.intervalMinutes = intervalMinutes;
       if (intervalMinutes === null) {
@@ -71,6 +72,98 @@ function gateway(system: ScheduledFeedingReminder[] = [], overrides: Partial<Not
   return { ...result, ...overrides } as jest.Mocked<NotificationGateway>;
 }
 
+function cancellationVisibilityLagGateway(settles: boolean) {
+  const oldReminder = {
+    identifier: 'old-native-id',
+    sourceRecordId: 'old-feeding',
+    scheduledForMs: scheduledForMs - 1,
+  };
+  const system = [oldReminder];
+  const pendingCancellationReads = new Map<string, number>();
+  const notifications: NotificationGateway = {
+    ensureFeedingChannel: async () => undefined,
+    getPermission: async () => ({ status: 'granted', canAskAgain: true }),
+    requestPermission: async () => ({ status: 'granted', canAskAgain: true }),
+    listFeedingReminders: async () => {
+      for (const [identifier, remainingReads] of pendingCancellationReads) {
+        if (remainingReads !== 0) continue;
+        const index = system.findIndex((item) => item.identifier === identifier);
+        if (index >= 0) system.splice(index, 1);
+        pendingCancellationReads.delete(identifier);
+      }
+      const snapshot = system.map((item) => ({ ...item }));
+      for (const [identifier, remainingReads] of pendingCancellationReads) {
+        if (remainingReads > 0) pendingCancellationReads.set(identifier, remainingReads - 1);
+      }
+      return snapshot;
+    },
+    scheduleFeedingReminder: async (input) => {
+      system.push({ identifier: 'new-native-id', ...input });
+      return 'new-native-id';
+    },
+    cancelScheduledNotification: async (identifier) => {
+      if (identifier === oldReminder.identifier) {
+        if (settles && !pendingCancellationReads.has(identifier)) {
+          pendingCancellationReads.set(identifier, 1);
+        }
+        return;
+      }
+      const index = system.findIndex((item) => item.identifier === identifier);
+      if (index >= 0) system.splice(index, 1);
+    },
+    openSystemSettings: async () => undefined,
+    scheduleDevelopmentTestReminder: async () => 'dev-id',
+    cancelDevelopmentTestReminders: async () => undefined,
+    getLastNavigationResponse: async () => null,
+    subscribeToNavigationResponses: () => ({ remove: () => undefined }),
+    clearLastNavigationResponse: async () => undefined,
+  };
+  return notifications as jest.Mocked<NotificationGateway>;
+}
+
+function delayedNativeVisibilityGateway() {
+  const oldReminder = {
+    identifier: 'old-native-id',
+    sourceRecordId: feeding.id,
+    scheduledForMs,
+  };
+  let nativeTick = 0;
+  let oldCancellationRequested = false;
+  let newScheduleRequested = false;
+  let newScheduleSurvived = false;
+  const notifications: NotificationGateway = {
+    ensureFeedingChannel: async () => undefined,
+    getPermission: async () => ({ status: 'granted', canAskAgain: true }),
+    requestPermission: async () => ({ status: 'granted', canAskAgain: true }),
+    listFeedingReminders: async () => {
+      const snapshot: ScheduledFeedingReminder[] = [];
+      if (!oldCancellationRequested || nativeTick < 2) snapshot.push({ ...oldReminder });
+      if (newScheduleRequested && newScheduleSurvived && nativeTick >= 3) {
+        snapshot.push({ identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs });
+      }
+      return snapshot;
+    },
+    scheduleFeedingReminder: async () => {
+      newScheduleRequested = true;
+      newScheduleSurvived = !oldCancellationRequested || nativeTick >= 2;
+      return 'new-native-id';
+    },
+    cancelScheduledNotification: async (identifier) => {
+      if (identifier === oldReminder.identifier) oldCancellationRequested = true;
+    },
+    openSystemSettings: async () => undefined,
+    scheduleDevelopmentTestReminder: async () => 'dev-id',
+    cancelDevelopmentTestReminders: async () => undefined,
+    getLastNavigationResponse: async () => null,
+    subscribeToNavigationResponses: () => ({ remove: () => undefined }),
+    clearLastNavigationResponse: async () => undefined,
+  };
+  return {
+    notifications: notifications as jest.Mocked<NotificationGateway>,
+    waitForConfirmationRetry: async () => { nativeTick += 1; },
+  };
+}
+
 function feedingRepository(latest: FeedingRecord | null = feeding) {
   return { getLatest: jest.fn(async () => latest) } as unknown as jest.Mocked<FeedingRepository>;
 }
@@ -79,18 +172,21 @@ function service(input: {
   settings?: jest.Mocked<FeedingReminderSettingsRepository>;
   gateway?: jest.Mocked<NotificationGateway>;
   latest?: FeedingRecord | null;
+  waitForConfirmationRetry?: (delayMs: number) => Promise<void>;
 } = {}) {
   const repository = input.settings ?? settingsRepository();
   const notifications = input.gateway ?? gateway();
+  const dependencies: Parameters<typeof createFeedingReminderService>[0] = {
+    settingsRepository: repository,
+    feedingRepository: feedingRepository(input.latest),
+    notificationGateway: notifications,
+    now: () => nowMs,
+    waitForConfirmationRetry: input.waitForConfirmationRetry ?? (async () => undefined),
+  };
   return {
     repository,
     notifications,
-    service: createFeedingReminderService({
-      settingsRepository: repository,
-      feedingRepository: feedingRepository(input.latest),
-      notificationGateway: notifications,
-      now: () => nowMs,
-    }),
+    service: createFeedingReminderService(dependencies),
   };
 }
 
@@ -157,9 +253,6 @@ describe('feeding reminder reconciliation', () => {
     const stale = { identifier: 'stale', sourceRecordId: 'old', scheduledForMs: scheduledForMs - 1 };
     const duplicate = { identifier: 'duplicate', sourceRecordId: feeding.id, scheduledForMs };
     const notifications = gateway([stale, duplicate]);
-    notifications.listFeedingReminders
-      .mockResolvedValueOnce([stale, duplicate])
-      .mockResolvedValueOnce([{ identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs }]);
     const settings = settingsRepository();
     await service({ settings, gateway: notifications }).service.syncFeedingReminder();
     expect(notifications.cancelScheduledNotification).toHaveBeenCalledWith('stale');
@@ -170,6 +263,193 @@ describe('feeding reminder reconciliation', () => {
     expect(settings.saveMetadata).toHaveBeenCalledWith({
       notificationId: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
     }, nowMs);
+  });
+
+  test('converges when a canceled reminder remains visible in the first confirmation snapshot', async () => {
+    const settings = settingsRepository();
+    const notifications = cancellationVisibilityLagGateway(true);
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'scheduled', scheduledForMs, syncErrorCode: null });
+
+    await expect(notifications.listFeedingReminders()).resolves.toEqual([{
+      identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
+    }]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs, syncErrorCode: null,
+    });
+  });
+
+  test('waits for old cancellation to settle before scheduling its replacement', async () => {
+    const settings = settingsRepository();
+    const delayedNative = delayedNativeVisibilityGateway();
+    const instance = service({
+      settings,
+      gateway: delayedNative.notifications,
+      waitForConfirmationRetry: delayedNative.waitForConfirmationRetry,
+    });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'scheduled', scheduledForMs, syncErrorCode: null });
+
+    await expect(delayedNative.notifications.listFeedingReminders()).resolves.toEqual([{
+      identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
+    }]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs, syncErrorCode: null,
+    });
+  });
+
+  test('does not schedule a replacement while an old reminder cannot be cleared', async () => {
+    const settings = settingsRepository();
+    const notifications = cancellationVisibilityLagGateway(false);
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    await expect(notifications.listFeedingReminders()).resolves.toEqual([
+      { identifier: 'old-native-id', sourceRecordId: 'old-feeding', scheduledForMs: scheduledForMs - 1 },
+    ]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: null, sourceRecordId: null, scheduledForMs: null,
+      syncErrorCode: 'reconcile-failed',
+    });
+  });
+
+  test('reports a post-schedule persistent duplicate without deleting a confirmed new reminder', async () => {
+    const system: ScheduledFeedingReminder[] = [];
+    const settings = settingsRepository();
+    const notifications = gateway(system, {
+      scheduleFeedingReminder: jest.fn(async (input) => {
+        system.push(
+          { identifier: 'new-native-id', ...input },
+          { identifier: 'persistent-duplicate', sourceRecordId: 'unexpected', scheduledForMs: scheduledForMs - 1 },
+        );
+        return 'new-native-id';
+      }),
+      cancelScheduledNotification: jest.fn(async (identifier) => {
+        if (identifier === 'persistent-duplicate') return;
+        const index = system.findIndex((item) => item.identifier === identifier);
+        if (index >= 0) system.splice(index, 1);
+      }),
+    });
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    expect(system).toEqual([
+      { identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs },
+      { identifier: 'persistent-duplicate', sourceRecordId: 'unexpected', scheduledForMs: scheduledForMs - 1 },
+    ]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
+      syncErrorCode: 'reconcile-failed',
+    });
+  });
+
+  test('cancels a same-id reminder whose payload does not match the plan', async () => {
+    const system: ScheduledFeedingReminder[] = [];
+    const settings = settingsRepository();
+    const notifications = gateway(system, {
+      scheduleFeedingReminder: jest.fn(async () => {
+        system.push({
+          identifier: 'new-native-id',
+          sourceRecordId: 'wrong-feeding',
+          scheduledForMs: scheduledForMs - 1,
+        });
+        return 'new-native-id';
+      }),
+    });
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    expect(system).toEqual([]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: null, sourceRecordId: null, scheduledForMs: null,
+      syncErrorCode: 'reconcile-failed',
+    });
+  });
+
+  test('cancels the known scheduled id when confirmation listing fails', async () => {
+    const system: ScheduledFeedingReminder[] = [];
+    const settings = settingsRepository();
+    const notifications = gateway(system, {
+      listFeedingReminders: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockRejectedValue(new Error('native list failed')),
+    });
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    expect(system).toEqual([]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: null, sourceRecordId: null, scheduledForMs: null,
+      syncErrorCode: 'reconcile-failed',
+    });
+  });
+
+  test('keeps metadata when canceling an unconfirmed scheduled id fails', async () => {
+    const system: ScheduledFeedingReminder[] = [];
+    const settings = settingsRepository();
+    const notifications = gateway(system, {
+      listFeedingReminders: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockRejectedValue(new Error('native list failed')),
+      cancelScheduledNotification: jest.fn(async () => { throw new Error('native cancel failed'); }),
+    });
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    expect(system).toEqual([{
+      identifier: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
+    }]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: 'new-native-id', sourceRecordId: feeding.id, scheduledForMs,
+      syncErrorCode: 'reconcile-failed',
+    });
+  });
+
+  test('clears canceled metadata even when another invalid reminder cleanup fails', async () => {
+    const system: ScheduledFeedingReminder[] = [];
+    const invalid = {
+      identifier: 'invalid-native-id',
+      sourceRecordId: 'unexpected',
+      scheduledForMs: scheduledForMs - 1,
+    };
+    const settings = settingsRepository();
+    const notifications = gateway(system, {
+      listFeedingReminders: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([invalid]),
+      scheduleFeedingReminder: jest.fn(async (input) => {
+        system.push({ identifier: 'new-native-id', ...input }, invalid);
+        return 'new-native-id';
+      }),
+      cancelScheduledNotification: jest.fn(async (identifier) => {
+        if (identifier === invalid.identifier) throw new Error('invalid cleanup failed');
+        const index = system.findIndex((item) => item.identifier === identifier);
+        if (index >= 0) system.splice(index, 1);
+      }),
+    });
+    const instance = service({ settings, gateway: notifications });
+
+    await expect(instance.service.syncFeedingReminder({ forceReschedule: true }))
+      .resolves.toMatchObject({ kind: 'sync-error', errorCode: 'reconcile-failed' });
+
+    expect(system).toEqual([invalid]);
+    await expect(settings.get()).resolves.toMatchObject({
+      notificationId: null, sourceRecordId: null, scheduledForMs: null,
+      syncErrorCode: 'reconcile-failed',
+    });
   });
 
   test('does not schedule a replacement when canceling stale reminders fails', async () => {
@@ -207,6 +487,34 @@ describe('feeding reminder reconciliation', () => {
 });
 
 describe('feeding reminder permission activation', () => {
+  test('serializes foreground reconciliation behind an in-flight permission activation', async () => {
+    const settings = settingsRepository();
+    await settings.setInterval(null, 0);
+    let resolvePermission: ((permission: { status: 'granted'; canAskAgain: true }) => void) | undefined;
+    let markPermissionRequested: (() => void) | undefined;
+    const permissionRequested = new Promise<void>((resolve) => {
+      markPermissionRequested = resolve;
+    });
+    const notifications = gateway([], {
+      getPermission: jest.fn()
+        .mockResolvedValueOnce({ status: 'denied' as const, canAskAgain: true })
+        .mockResolvedValue({ status: 'granted' as const, canAskAgain: true }),
+      requestPermission: jest.fn(() => new Promise((resolve) => {
+        resolvePermission = resolve;
+        markPermissionRequested?.();
+      })),
+    });
+    const instance = service({ settings, gateway: notifications });
+    const activation = instance.service.setInterval(120);
+
+    await permissionRequested;
+    const foregroundSync = instance.service.syncFeedingReminder();
+    resolvePermission?.({ status: 'granted', canAskAgain: true });
+
+    await expect(activation).resolves.toMatchObject({ kind: 'scheduled', intervalMinutes: 120 });
+    await expect(foregroundSync).resolves.toMatchObject({ kind: 'scheduled', intervalMinutes: 120 });
+  });
+
   test('requests permission only from an explicit enabled interval selection', async () => {
     const settings = settingsRepository();
     const notifications = gateway([], {

@@ -20,6 +20,7 @@ type Dependencies = {
   notificationGateway: NotificationGateway;
   now(): number;
   operationCoordinator?: BackupOperationCoordinator;
+  waitForConfirmationRetry?(delayMs: number): Promise<void>;
 };
 
 type FeedingReminderSyncOptions = {
@@ -31,6 +32,9 @@ type FeedingReminderStatusCommon = {
   permissionStatus: NotificationPermissionStatus;
   latestFeedingEventTimeMs: number | null;
 };
+
+// Four native snapshots over at most 1.75 seconds; timer waits yield the JS thread.
+const REMINDER_CONFIRMATION_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
 
 export type FeedingReminderStatus = FeedingReminderStatusCommon & (
   | (FeedingReminderPlan & { syncErrorCode: null })
@@ -62,6 +66,14 @@ function effectivePermissionStatus(
 
 export function createFeedingReminderService(dependencies: Dependencies) {
   let queue: Promise<unknown> = Promise.resolve();
+  const waitForConfirmationRetry = dependencies.waitForConfirmationRetry
+    ?? ((delayMs: number) => new Promise<void>((resolve) => { setTimeout(resolve, delayMs); }));
+
+  function enqueue<T>(operation: () => Promise<T>) {
+    const result = queue.then(operation, operation);
+    queue = result.then(() => undefined, () => undefined);
+    return result;
+  }
 
   async function setError(
     errorCode: FeedingReminderSyncErrorCode,
@@ -92,6 +104,17 @@ export function createFeedingReminderService(dependencies: Dependencies) {
     for (const reminder of reminders) {
       await dependencies.notificationGateway.cancelScheduledNotification(reminder.identifier);
     }
+  }
+
+  async function waitForOwnedRemindersToClear() {
+    for (let attempt = 0; attempt <= REMINDER_CONFIRMATION_RETRY_DELAYS_MS.length; attempt += 1) {
+      const remaining = await dependencies.notificationGateway.listFeedingReminders();
+      if (remaining.length === 0) return true;
+      await cancelOwned(remaining);
+      const retryDelayMs = REMINDER_CONFIRMATION_RETRY_DELAYS_MS[attempt];
+      if (retryDelayMs !== undefined) await waitForConfirmationRetry(retryDelayMs);
+    }
+    return false;
   }
 
   async function performSync(options: FeedingReminderSyncOptions = {}): Promise<FeedingReminderStatus> {
@@ -150,6 +173,19 @@ export function createFeedingReminderService(dependencies: Dependencies) {
     } catch {
       return setError('cancel-failed', { ...common, scheduledForMs: plan.scheduledForMs }, false);
     }
+    if (systemReminders.length > 0) {
+      try {
+        if (!await waitForOwnedRemindersToClear()) {
+          return setError(
+            'reconcile-failed',
+            { ...common, scheduledForMs: plan.scheduledForMs },
+            true,
+          );
+        }
+      } catch {
+        return setError('cancel-failed', { ...common, scheduledForMs: plan.scheduledForMs }, false);
+      }
+    }
 
     let notificationId: string;
     try {
@@ -173,33 +209,58 @@ export function createFeedingReminderService(dependencies: Dependencies) {
       return setError('metadata-failed', { ...common, scheduledForMs: plan.scheduledForMs }, true);
     }
 
+    let confirmedNewReminder = false;
+    const invalidReminders = new Map<string, ScheduledFeedingReminder>();
     try {
-      const confirmed = await dependencies.notificationGateway.listFeedingReminders();
-      const valid = confirmed.filter((item) => sameReminder(item, plan));
-      if (confirmed.length !== 1 || valid.length !== 1 || valid[0].identifier !== notificationId) {
-        await cancelOwned(confirmed);
-        return setError('reconcile-failed', { ...common, scheduledForMs: plan.scheduledForMs }, true);
+      for (let attempt = 0; attempt <= REMINDER_CONFIRMATION_RETRY_DELAYS_MS.length; attempt += 1) {
+        const confirmed = await dependencies.notificationGateway.listFeedingReminders();
+        const isValidNewReminder = (item: ScheduledFeedingReminder) =>
+          item.identifier === notificationId && sameReminder(item, plan);
+        const newReminderIsValid = confirmed.some(isValidNewReminder);
+        for (const reminder of confirmed) {
+          if (!isValidNewReminder(reminder)) invalidReminders.set(reminder.identifier, reminder);
+        }
+        confirmedNewReminder ||= newReminderIsValid;
+        if (confirmed.length === 1 && newReminderIsValid) {
+          return { ...common, ...plan, syncErrorCode: null };
+        }
+        const retryDelayMs = REMINDER_CONFIRMATION_RETRY_DELAYS_MS[attempt];
+        if (retryDelayMs !== undefined) await waitForConfirmationRetry(retryDelayMs);
       }
-    } catch {
-      return setError('reconcile-failed', { ...common, scheduledForMs: plan.scheduledForMs }, false);
+    } catch { /* handled by the same bounded reconciliation failure below */ }
+
+    if (!confirmedNewReminder) {
+      let scheduledCancellationFailed = false;
+      try {
+        await dependencies.notificationGateway.cancelScheduledNotification(notificationId);
+      } catch {
+        scheduledCancellationFailed = true;
+      }
+      const otherInvalidReminders = [...invalidReminders.values()]
+        .filter((reminder) => reminder.identifier !== notificationId);
+      try { await cancelOwned(otherInvalidReminders); } catch { /* best effort */ }
+      return setError(
+        'reconcile-failed',
+        { ...common, scheduledForMs: plan.scheduledForMs },
+        !scheduledCancellationFailed,
+      );
     }
 
-    return { ...common, ...plan, syncErrorCode: null };
+    return setError(
+      'reconcile-failed',
+      { ...common, scheduledForMs: plan.scheduledForMs },
+      false,
+    );
   }
 
   function syncFeedingReminder(options: FeedingReminderSyncOptions = {}) {
-    const result = queue.then(
-      () => performSync(options),
-      () => performSync(options),
-    );
-    queue = result.then(() => undefined, () => undefined);
-    return result;
+    return enqueue(() => performSync(options));
   }
 
   async function performSetInterval(intervalMinutes: number | null) {
     if (intervalMinutes === null) {
       await dependencies.settingsRepository.setInterval(null, dependencies.now());
-      return syncFeedingReminder();
+      return performSync();
     }
     validateFeedingReminderInterval(intervalMinutes);
     let permission = await dependencies.notificationGateway.getPermission();
@@ -221,11 +282,11 @@ export function createFeedingReminderService(dependencies: Dependencies) {
       }
     }
     await dependencies.settingsRepository.setInterval(intervalMinutes, dependencies.now());
-    return syncFeedingReminder();
+    return performSync();
   }
 
   function setInterval(intervalMinutes: number | null) {
-    const operation = () => performSetInterval(intervalMinutes);
+    const operation = () => enqueue(() => performSetInterval(intervalMinutes));
     return dependencies.operationCoordinator?.runExclusive(operation) ?? operation();
   }
 

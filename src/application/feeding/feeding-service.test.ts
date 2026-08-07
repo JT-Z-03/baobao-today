@@ -16,6 +16,7 @@ const record: FeedingRecord = {
   updatedAtMs: eventTimeMs,
   feedingType: 'formula',
   milkAmountMl: 60,
+  breastMilkAmountMl: null,
   leftDurationMin: null,
   rightDurationMin: null,
   note: null,
@@ -30,7 +31,12 @@ function createRepository(): jest.Mocked<FeedingRepository> {
     listByDate: jest.fn(async (_recordDate) => [record]),
     getLatest: jest.fn(async () => record),
     getLatestMilkAmount: jest.fn(async () => 90),
-    getDailySummary: jest.fn(async (_recordDate) => ({ feedingCount: 1, formulaTotalMl: 60 })),
+    getDailySummary: jest.fn(async (_recordDate) => ({
+      feedingCount: 1,
+      formulaTotalMl: 60,
+      breastMilkTotalMl: 0,
+      measurableTotalMl: 60,
+    })),
   };
 }
 
@@ -46,6 +52,7 @@ describe('feeding application service', () => {
       eventTimeMs,
       feedingType: 'formula' as const,
       milkAmountMl: 60,
+      breastMilkAmountMl: null,
       leftDurationMin: null,
       rightDurationMin: null,
       note: null,
@@ -74,11 +81,17 @@ describe('feeding application service', () => {
       eventTimeMs: eventTimeMs + 123,
       feedingType: 'formula',
       milkAmountMl: 90,
+      breastMilkAmountMl: null,
     });
     await expect(service.getDashboard('2026-07-11')).resolves.toEqual({
       latest: record,
       timeline: [record],
-      summary: { feedingCount: 1, formulaTotalMl: 60 },
+      summary: {
+        feedingCount: 1,
+        formulaTotalMl: 60,
+        breastMilkTotalMl: 0,
+        measurableTotalMl: 60,
+      },
       refreshedAtMs: eventTimeMs + 123,
     });
 
@@ -98,6 +111,7 @@ describe('feeding application service', () => {
       eventTimeMs,
       feedingType: 'breast' as const,
       milkAmountMl: null,
+      breastMilkAmountMl: null,
       leftDurationMin: 10,
       rightDurationMin: 0,
       note: null,
@@ -129,6 +143,7 @@ describe('feeding application service', () => {
       eventTimeMs,
       feedingType: 'formula' as const,
       milkAmountMl: 60,
+      breastMilkAmountMl: null,
       leftDurationMin: null,
       rightDurationMin: null,
       note: null,
@@ -153,6 +168,7 @@ describe('feeding application service', () => {
       eventTimeMs,
       feedingType: 'formula',
       milkAmountMl: 60,
+      breastMilkAmountMl: null,
       leftDurationMin: null,
       rightDurationMin: null,
       note: null,

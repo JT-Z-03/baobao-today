@@ -93,6 +93,22 @@ describe('SQLiteExportSnapshotRepository host SQLite integration', () => {
     sqlite.close();
   });
 
+  test('maps formula and bottled breast milk amounts from a mixed feeding row', async () => {
+    const { sqlite, repository } = setup();
+    insertBase(sqlite, {
+      id: 'mixed', type: 'feeding', eventTimeMs: ms(11, 1),
+      extraColumns: ', feeding_type, milk_amount_ml, breast_milk_amount_ml',
+      extraPlaceholders: ', ?, ?, ?', extraValues: ['mixed', 40, 80],
+    });
+
+    const snapshot = await repository.getSnapshot({ kind: 'all' }, ms(11, 12));
+
+    expect(snapshot.records).toEqual([expect.objectContaining({
+      id: 'mixed', feedingType: 'mixed', milkAmountMl: 40, breastMilkAmountMl: 80,
+    })]);
+    sqlite.close();
+  });
+
   test('includes a cross-day sleep once when it overlaps and excludes the end boundary for ordinary records', async () => {
     const { sqlite, repository } = setup();
     insertBase(sqlite, { id: 'cross-day', type: 'sleep', eventTimeMs: ms(10, 23), extraColumns: ', sleep_start_ms, sleep_end_ms, sleep_status', extraPlaceholders: ', ?, ?, ?', extraValues: [ms(10, 23), ms(11, 2), 'completed'] });

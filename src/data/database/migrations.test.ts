@@ -11,6 +11,10 @@ describe('SQLite migration contract', () => {
   const poopSql = MIGRATIONS[2]?.sql ?? '';
   const peeSql = MIGRATIONS[3]?.sql ?? '';
 
+  test('ends at schema version nine', () => {
+    expect(MIGRATIONS.at(-1)?.version).toBe(9);
+  });
+
   test('requires complete idempotency metadata for every record', () => {
     expect(initialSql).toMatch(/client_request_id\s+TEXT\s+NOT NULL\s+UNIQUE/i);
     expect(initialSql).toMatch(/create_payload_hash\s+TEXT\s+NOT NULL/i);
@@ -77,7 +81,7 @@ describe('SQLite migration contract', () => {
 
     expect(sqlite.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.at(-1)?.version });
     expect(firstRunCount).toBeGreaterThan(0);
-    expect(firstRunCount).toBe(versionSevenTransactionCount + 1);
+    expect(firstRunCount).toBe(versionSevenTransactionCount + 2);
     expect(transactionCount).toBe(firstRunCount);
     sqlite.close();
   });

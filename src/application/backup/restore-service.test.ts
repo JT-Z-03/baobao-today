@@ -7,7 +7,7 @@ const data: BackupData = {
   records: [{
     id: 'poop-1', client_request_id: 'request-1', create_payload_hash: 'a'.repeat(64), type: 'poop',
     event_time_ms: 1, record_date: '2026-07-10', sort_time_ms: 1, created_at_ms: 1, updated_at_ms: 1,
-    note: null, feeding_type: null, milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
+    note: null, feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
     poop_color: 'yellow', poop_texture: null, poop_amount: null, photo_backup_entry: 'photos/photo-1.jpg',
     photo_sha256: 'b'.repeat(64), pee_color: null, pee_amount: null, sleep_start_ms: null,
     sleep_end_ms: null, sleep_status: null, other_title: null,
@@ -51,7 +51,7 @@ function setup() {
   };
   const picker = { pickBackup: jest.fn(async () => ({ canceled: false as const, uri: 'picked.zip', name: 'picked.zip', size: 100 })) };
   const coordinator = { busy: false, runExclusive: jest.fn(async <T,>(operation: () => Promise<T>) => operation()) };
-  const reminderSync = jest.fn(async () => undefined);
+  const reminderSync: jest.MockedFunction<() => Promise<unknown>> = jest.fn(async () => undefined);
   const refreshAppState = jest.fn(async () => undefined);
   const service = createRestoreService({
     validationService: validationService as never,
@@ -145,6 +145,19 @@ describe('RestoreService replacement and compensation', () => {
     await value.service.pickAndPrepare();
     await expect(value.service.confirmPrepared()).resolves.toEqual({
       committed: true, warnings: ['old-photo-cleanup', 'reminder-sync', 'app-refresh'],
+    });
+    expect(value.restoreRepository.replaceAll).toHaveBeenCalled();
+  });
+
+  test('a resolved reminder sync error becomes a post-commit warning', async () => {
+    const value = setup();
+    value.reminderSync.mockResolvedValueOnce({
+      kind: 'sync-error', errorCode: 'reconcile-failed', syncErrorCode: 'reconcile-failed',
+    });
+    await value.service.pickAndPrepare();
+
+    await expect(value.service.confirmPrepared()).resolves.toEqual({
+      committed: true, warnings: ['reminder-sync'],
     });
     expect(value.restoreRepository.replaceAll).toHaveBeenCalled();
   });

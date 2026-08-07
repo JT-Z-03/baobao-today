@@ -20,6 +20,7 @@ function baseRecord(type: 'feeding' | 'poop' | 'pee' | 'sleep' | 'other', id: st
     note: null,
     feeding_type: null,
     milk_amount_ml: null,
+    breast_milk_amount_ml: null,
     left_duration_min: null,
     right_duration_min: null,
     poop_color: null,
@@ -53,9 +54,103 @@ function validData(): any {
   };
 }
 
+function validVersionOneData(): any {
+  const value = validData();
+  for (const record of value.records) delete record.breast_milk_amount_ml;
+  return value;
+}
+
 describe('backup business data validation', () => {
   test('accepts one baby, five isolated record types, historical dates, and allowlisted settings', () => {
     expect(validateBackupData(validData())).toEqual(validData());
+  });
+
+  test('normalizes valid version one feeding records with an empty bottled amount', () => {
+    const value = validVersionOneData();
+    expect(validateBackupData(value, 1).records[0]).toMatchObject({
+      feeding_type: 'mixed',
+      milk_amount_ml: 60,
+      breast_milk_amount_ml: null,
+      left_duration_min: 5,
+      right_duration_min: 0,
+    });
+  });
+
+  test('rejects a version one record that carries the version two field', () => {
+    expect(() => validateBackupData(validData(), 1)).toThrow(BackupValidationError);
+  });
+
+  test('rejects a version one bottled breast feeding type', () => {
+    const value = validVersionOneData();
+    value.records[0].feeding_type = 'bottle_breast';
+    expect(() => validateBackupData(value, 1)).toThrow(BackupValidationError);
+  });
+
+  test('rejects a version two record that omits the bottled amount field', () => {
+    expect(() => validateBackupData(validVersionOneData(), 2)).toThrow(BackupValidationError);
+  });
+
+  test.each([
+    { milk_amount_ml: null, breast_milk_amount_ml: 80, left_duration_min: 10, right_duration_min: 0 },
+    { milk_amount_ml: 40, breast_milk_amount_ml: null, left_duration_min: 10, right_duration_min: 0 },
+    { milk_amount_ml: 40, breast_milk_amount_ml: 80, left_duration_min: null, right_duration_min: null },
+    { milk_amount_ml: 40, breast_milk_amount_ml: 80, left_duration_min: 10, right_duration_min: 0 },
+  ])('accepts version two mixed feeding with valid components %#', (components) => {
+    const value = validData();
+    Object.assign(value.records[0], components);
+    expect(validateBackupData(value, 2).records[0]).toMatchObject({ feeding_type: 'mixed', ...components });
+  });
+
+  test.each([
+    { milk_amount_ml: 40, breast_milk_amount_ml: null, left_duration_min: null, right_duration_min: null },
+    { milk_amount_ml: null, breast_milk_amount_ml: 80, left_duration_min: null, right_duration_min: null },
+    { milk_amount_ml: null, breast_milk_amount_ml: null, left_duration_min: 10, right_duration_min: 0 },
+  ])('rejects version two mixed feeding with one component %#', (components) => {
+    const value = validData();
+    Object.assign(value.records[0], components);
+    expect(() => validateBackupData(value, 2)).toThrow(BackupValidationError);
+  });
+
+  test('accepts bottled breast milk and isolates its fields', () => {
+    const value = validData();
+    Object.assign(value.records[0], {
+      feeding_type: 'bottle_breast', milk_amount_ml: null, breast_milk_amount_ml: 80,
+      left_duration_min: null, right_duration_min: null,
+    });
+    expect(validateBackupData(value, 2).records[0]).toMatchObject({
+      feeding_type: 'bottle_breast', breast_milk_amount_ml: 80,
+    });
+  });
+
+  test.each([
+    ['formula with bottled breast milk', { feeding_type: 'formula', milk_amount_ml: 60, breast_milk_amount_ml: 80, left_duration_min: null, right_duration_min: null }],
+    ['formula with direct breast duration', { feeding_type: 'formula', milk_amount_ml: 60, breast_milk_amount_ml: null, left_duration_min: 5, right_duration_min: 0 }],
+    ['breast with formula amount', { feeding_type: 'breast', milk_amount_ml: 60, breast_milk_amount_ml: null, left_duration_min: 5, right_duration_min: 0 }],
+    ['breast with bottled breast amount', { feeding_type: 'breast', milk_amount_ml: null, breast_milk_amount_ml: 80, left_duration_min: 5, right_duration_min: 0 }],
+    ['bottled breast milk with formula amount', { feeding_type: 'bottle_breast', milk_amount_ml: 60, breast_milk_amount_ml: 80, left_duration_min: null, right_duration_min: null }],
+    ['bottled breast milk with direct breast duration', { feeding_type: 'bottle_breast', milk_amount_ml: null, breast_milk_amount_ml: 80, left_duration_min: 5, right_duration_min: 0 }],
+  ])('rejects non-mixed feeding field pollution: %s', (_label, feeding) => {
+    const value = validData();
+    Object.assign(value.records[0], feeding);
+    expect(() => validateBackupData(value, 2)).toThrow(BackupValidationError);
+  });
+
+  test.each([0, 1000])('rejects bottled breast milk amount outside 1 to 999: %s', (breast_milk_amount_ml) => {
+    const value = validData();
+    Object.assign(value.records[0], {
+      feeding_type: 'bottle_breast', milk_amount_ml: null, breast_milk_amount_ml,
+      left_duration_min: null, right_duration_min: null,
+    });
+    expect(() => validateBackupData(value, 2)).toThrow(BackupValidationError);
+  });
+
+  test.each([1, 999])('accepts bottled breast milk amount boundary: %s', (breast_milk_amount_ml) => {
+    const value = validData();
+    Object.assign(value.records[0], {
+      feeding_type: 'bottle_breast', milk_amount_ml: null, breast_milk_amount_ml,
+      left_duration_min: null, right_duration_min: null,
+    });
+    expect(() => validateBackupData(value, 2)).not.toThrow();
   });
 
   test.each(['2026-02-30', '2026-13-01', '2026-00-10', '2026-7-01', 'not-a-date'])(
@@ -112,6 +207,17 @@ describe('backup business data validation', () => {
     const input = validData();
     mutate(input);
     expect(() => validateBackupData(input)).toThrow(BackupValidationError);
+  });
+
+  test.each([
+    ['poop', 1],
+    ['pee', 2],
+    ['sleep', 3],
+    ['other', 4],
+  ])('rejects bottled breast milk on a non-feeding %s record', (_label, index) => {
+    const value = validData();
+    value.records[index].breast_milk_amount_ml = 80;
+    expect(() => validateBackupData(value, 2)).toThrow(BackupValidationError);
   });
 
   test.each([

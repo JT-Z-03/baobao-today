@@ -33,6 +33,7 @@ export function FeedingFormScreen({ recordId }: Props) {
             eventTimeMs: record.eventTimeMs,
             feedingType: record.feedingType,
             milkAmountMl: record.milkAmountMl,
+            breastMilkAmountMl: record.breastMilkAmountMl,
             leftDurationMin: record.leftDurationMin,
             rightDurationMin: record.rightDurationMin,
             note: record.note,
@@ -42,8 +43,9 @@ export function FeedingFormScreen({ recordId }: Props) {
           eventTimeMs: defaults.eventTimeMs,
           feedingType: defaults.feedingType,
           milkAmountMl: defaults.milkAmountMl,
-          leftDurationMin: defaults.feedingType === 'formula' ? null : 0,
-          rightDurationMin: defaults.feedingType === 'formula' ? null : 0,
+          breastMilkAmountMl: defaults.breastMilkAmountMl,
+          leftDurationMin: defaults.feedingType === 'breast' || defaults.feedingType === 'mixed' ? 0 : null,
+          rightDurationMin: defaults.feedingType === 'breast' || defaults.feedingType === 'mixed' ? 0 : null,
           note: null,
         }) satisfies FeedingCreateInput);
 

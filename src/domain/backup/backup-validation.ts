@@ -1,10 +1,12 @@
 import type {
   BackupBaby,
   BackupData,
+  BackupFormatVersion,
   BackupRecord,
   BackupRecordType,
   BackupSettings,
 } from './backup-types';
+import { BACKUP_FORMAT_VERSION } from './backup-manifest';
 
 export class BackupValidationError extends Error {
   constructor(
@@ -16,13 +18,15 @@ export class BackupValidationError extends Error {
   }
 }
 
-const recordKeys = [
+const recordKeysV2 = [
   'id', 'client_request_id', 'create_payload_hash', 'type', 'event_time_ms', 'record_date',
   'sort_time_ms', 'created_at_ms', 'updated_at_ms', 'note', 'feeding_type', 'milk_amount_ml',
+  'breast_milk_amount_ml',
   'left_duration_min', 'right_duration_min', 'poop_color', 'poop_texture', 'poop_amount',
   'photo_backup_entry', 'photo_sha256', 'pee_color', 'pee_amount', 'sleep_start_ms',
   'sleep_end_ms', 'sleep_status', 'other_title',
 ] as const;
+const recordKeysV1 = recordKeysV2.filter((key) => key !== 'breast_milk_amount_ml');
 
 function fail(code: string, message: string): never {
   throw new BackupValidationError(code, message);
@@ -100,9 +104,9 @@ function allNull(record: BackupRecord, fields: (keyof BackupRecord)[], label: st
   if (fields.some((field) => record[field] !== null)) fail('field-isolation', `${label}包含其他记录类型字段`);
 }
 
-function validateRecord(raw: unknown, index: number): BackupRecord {
+function validateRecord(raw: unknown, index: number, formatVersion: BackupFormatVersion): BackupRecord {
   const row = object(raw, `第${index + 1}条记录`);
-  exactKeys(row, recordKeys, `第${index + 1}条记录`);
+  exactKeys(row, formatVersion === 1 ? recordKeysV1 : recordKeysV2, `第${index + 1}条记录`);
   const record: BackupRecord = {
     id: stableId(row.id, '记录ID'),
     client_request_id: stableId(row.client_request_id, '请求ID'),
@@ -114,8 +118,14 @@ function validateRecord(raw: unknown, index: number): BackupRecord {
     created_at_ms: integer(row.created_at_ms, '创建时间', 0),
     updated_at_ms: integer(row.updated_at_ms, '更新时间', 0),
     note: nullableText(row.note, '备注', 200),
-    feeding_type: nullableEnum(row.feeding_type, ['breast', 'formula', 'mixed'] as const, '喂养方式'),
+    feeding_type: nullableEnum(
+      row.feeding_type,
+      formatVersion === 1 ? ['breast', 'formula', 'mixed'] as const : ['breast', 'formula', 'bottle_breast', 'mixed'] as const,
+      '喂养方式',
+    ),
     milk_amount_ml: nullableInteger(row.milk_amount_ml, '奶量', 0, 999),
+    breast_milk_amount_ml: formatVersion === 1
+      ? null : nullableInteger(row.breast_milk_amount_ml, '瓶喂母乳量', 0, 999),
     left_duration_min: nullableInteger(row.left_duration_min, '左侧时长', 0, 180),
     right_duration_min: nullableInteger(row.right_duration_min, '右侧时长', 0, 180),
     poop_color: nullableEnum(row.poop_color, ['yellow', 'green', 'brown', 'black', 'red', 'other'] as const, '大便颜色'),
@@ -131,7 +141,9 @@ function validateRecord(raw: unknown, index: number): BackupRecord {
     other_title: nullableText(row.other_title, '其他标题', 30),
   };
 
-  const feedingFields: (keyof BackupRecord)[] = ['feeding_type', 'milk_amount_ml', 'left_duration_min', 'right_duration_min'];
+  const feedingFields: (keyof BackupRecord)[] = [
+    'feeding_type', 'milk_amount_ml', 'breast_milk_amount_ml', 'left_duration_min', 'right_duration_min',
+  ];
   const poopFields: (keyof BackupRecord)[] = ['poop_color', 'poop_texture', 'poop_amount', 'photo_backup_entry', 'photo_sha256'];
   const peeFields: (keyof BackupRecord)[] = ['pee_color', 'pee_amount'];
   const sleepFields: (keyof BackupRecord)[] = ['sleep_start_ms', 'sleep_end_ms', 'sleep_status'];
@@ -139,12 +151,27 @@ function validateRecord(raw: unknown, index: number): BackupRecord {
   if (record.type === 'feeding') {
     allNull(record, [...poopFields, ...peeFields, ...sleepFields, 'other_title'], '喝奶记录');
     const total = (record.left_duration_min ?? 0) + (record.right_duration_min ?? 0);
-    const valid = (record.feeding_type === 'formula' && record.milk_amount_ml !== null && record.milk_amount_ml > 0
-      && record.left_duration_min === null && record.right_duration_min === null)
-      || (record.feeding_type === 'breast' && record.milk_amount_ml === null && record.left_duration_min !== null
-        && record.right_duration_min !== null && total > 0)
-      || (record.feeding_type === 'mixed' && record.milk_amount_ml !== null && record.milk_amount_ml > 0
-        && record.left_duration_min !== null && record.right_duration_min !== null && total > 0);
+    const directBreast = record.left_duration_min !== null || record.right_duration_min !== null;
+    const validDirectBreast = !directBreast || (record.left_duration_min !== null
+      && record.right_duration_min !== null && total > 0);
+    const valid = formatVersion === 1
+      ? (record.feeding_type === 'formula' && record.milk_amount_ml !== null && record.milk_amount_ml > 0
+        && record.left_duration_min === null && record.right_duration_min === null)
+        || (record.feeding_type === 'breast' && record.milk_amount_ml === null && record.left_duration_min !== null
+          && record.right_duration_min !== null && total > 0)
+        || (record.feeding_type === 'mixed' && record.milk_amount_ml !== null && record.milk_amount_ml > 0
+          && record.left_duration_min !== null && record.right_duration_min !== null && total > 0)
+      : (record.feeding_type === 'formula' && record.milk_amount_ml !== null && record.milk_amount_ml > 0
+        && record.breast_milk_amount_ml === null && !directBreast)
+        || (record.feeding_type === 'breast' && record.milk_amount_ml === null && record.breast_milk_amount_ml === null
+          && validDirectBreast && directBreast)
+        || (record.feeding_type === 'bottle_breast' && record.milk_amount_ml === null
+          && record.breast_milk_amount_ml !== null && record.breast_milk_amount_ml > 0 && !directBreast)
+        || (record.feeding_type === 'mixed'
+          && (record.milk_amount_ml === null || record.milk_amount_ml > 0)
+          && (record.breast_milk_amount_ml === null || record.breast_milk_amount_ml > 0)
+          && validDirectBreast
+          && Number(record.milk_amount_ml !== null) + Number(record.breast_milk_amount_ml !== null) + Number(directBreast) >= 2);
     if (!valid) fail('invalid-feeding', '喝奶记录语义无效');
   } else if (record.type === 'poop') {
     allNull(record, [...feedingFields, ...peeFields, ...sleepFields, 'other_title'], '大便记录');
@@ -201,11 +228,14 @@ function validateSettings(raw: unknown): BackupSettings {
   return { theme_mode, feeding_reminder_enabled: value.feeding_reminder_enabled, feeding_reminder_interval_minutes };
 }
 
-export function validateBackupData(raw: unknown): BackupData {
+export function validateBackupData(
+  raw: unknown,
+  formatVersion: BackupFormatVersion = BACKUP_FORMAT_VERSION,
+): BackupData {
   const value = object(raw, '备份数据');
   exactKeys(value, ['baby', 'records', 'settings'], '备份数据');
   if (!Array.isArray(value.records) || value.records.length > 100_000) fail('invalid-records', '记录列表无效或过大');
-  const records = value.records.map(validateRecord);
+  const records = value.records.map((record, index) => validateRecord(record, index, formatVersion));
   const ids = new Set<string>();
   const requests = new Set<string>();
   const photos = new Set<string>();

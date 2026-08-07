@@ -9,7 +9,7 @@ const data: BackupData = {
   records: [{
     id: 'poop-1', client_request_id: 'request-1', create_payload_hash: 'b'.repeat(64), type: 'poop',
     event_time_ms: 1, record_date: '2026-07-10', sort_time_ms: 1, created_at_ms: 1, updated_at_ms: 1,
-    note: null, feeding_type: null, milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
+    note: null, feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
     poop_color: 'yellow', poop_texture: null, poop_amount: null, photo_backup_entry: 'photos/photo-1.jpg',
     photo_sha256: hash, pee_color: null, pee_amount: null, sleep_start_ms: null, sleep_end_ms: null,
     sleep_status: null, other_title: null,
@@ -17,10 +17,14 @@ const data: BackupData = {
   settings: { theme_mode: 'dark', feeding_reminder_enabled: true, feeding_reminder_interval_minutes: 120 },
 };
 
-function setup(overrides: { manifestPatch?: Record<string, unknown>; textHash?: string } = {}) {
+function setup(overrides: {
+  manifestPatch?: Record<string, unknown>;
+  textHash?: string;
+  records?: unknown;
+} = {}) {
   const texts = {
     'baby.json': serializeBackupJson(data.baby),
-    'records.json': serializeBackupJson(data.records),
+    'records.json': serializeBackupJson(overrides.records ?? data.records),
     'settings.json': serializeBackupJson(data.settings),
   };
   const entries = Object.entries(texts).map(([path, content]) => ({
@@ -64,6 +68,13 @@ function setup(overrides: { manifestPatch?: Record<string, unknown>; textHash?: 
   return { service, workspace, archiveGateway, photoGateway };
 }
 
+function setupArchive(formatVersion: 1 | 2) {
+  const records = formatVersion === 1
+    ? data.records.map(({ breast_milk_amount_ml: _breastMilkAmountMl, ...record }) => record)
+    : data.records;
+  return setup({ manifestPatch: { formatVersion }, records });
+}
+
 describe('BackupValidationService', () => {
   test('validates archive structure, hashes, business data, photos, and returns a restore preview', async () => {
     const { service, photoGateway } = setup();
@@ -74,8 +85,15 @@ describe('BackupValidationService', () => {
     expect(photoGateway.validateStaged).toHaveBeenCalledWith('private/photos/photo-1.jpg', 6, hash);
   });
 
+  test.each([1, 2] as const)('prepares format version %s with current normalized data', async (formatVersion) => {
+    const { service } = setupArchive(formatVersion);
+    const prepared = await service.prepare('backup.zip', 'restore-session');
+    expect(prepared.manifest.formatVersion).toBe(formatVersion);
+    expect(prepared.data.records[0]).toHaveProperty('breast_milk_amount_ml');
+  });
+
   test('cleans staging and rejects a newer format before exposing preview', async () => {
-    const { service, workspace } = setup({ manifestPatch: { formatVersion: 2 } });
+    const { service, workspace } = setup({ manifestPatch: { formatVersion: 3 } });
     await expect(service.prepare('picked.zip', 'restore-1')).rejects.toMatchObject({ code: 'unsupported-newer-version' });
     expect(workspace.cleanup).toHaveBeenCalled();
   });

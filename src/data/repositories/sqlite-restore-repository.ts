@@ -22,10 +22,10 @@ export interface RestoreDatabase {
 
 const insertRecordSql = `INSERT INTO records (
   id, client_request_id, create_payload_hash, type, event_time_ms, record_date, sort_time_ms,
-  created_at_ms, updated_at_ms, note, feeding_type, milk_amount_ml, left_duration_min,
+  created_at_ms, updated_at_ms, note, feeding_type, milk_amount_ml, breast_milk_amount_ml, left_duration_min,
   right_duration_min, poop_color, poop_texture, poop_amount, photo_uri, pee_color, pee_amount,
   sleep_start_ms, sleep_end_ms, sleep_status, other_title
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 function expectedPhotoPaths(data: BackupData, photoPaths: ReadonlyMap<string, string>) {
   const expected = new Set<string>();
@@ -76,7 +76,7 @@ export class SQLiteRestoreRepository implements RestoreRepository {
           record.id, record.client_request_id, record.create_payload_hash, record.type,
           record.event_time_ms, record.record_date, record.sort_time_ms, record.created_at_ms,
           record.updated_at_ms, record.note, record.feeding_type, record.milk_amount_ml,
-          record.left_duration_min, record.right_duration_min, record.poop_color,
+          record.breast_milk_amount_ml, record.left_duration_min, record.right_duration_min, record.poop_color,
           record.poop_texture, record.poop_amount, photoUri, record.pee_color, record.pee_amount,
           record.sleep_start_ms, record.sleep_end_ms, record.sleep_status, record.other_title);
       }

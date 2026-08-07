@@ -13,6 +13,7 @@ function input(overrides: Record<string, unknown> = {}) {
     eventTimeMs: nowMs,
     feedingType: 'formula' as const,
     milkAmountMl: 60,
+    breastMilkAmountMl: null,
     leftDurationMin: null,
     rightDurationMin: null,
     note: null,
@@ -31,6 +32,7 @@ describe('feeding validation and normalization', () => {
       eventTimeMs: nowMs,
       feedingType: 'formula',
       milkAmountMl: 60,
+      breastMilkAmountMl: null,
       leftDurationMin: null,
       rightDurationMin: null,
       note: '夜间',
@@ -52,6 +54,7 @@ describe('feeding validation and normalization', () => {
     ).toMatchObject({
       feedingType: 'breast',
       milkAmountMl: null,
+      breastMilkAmountMl: null,
       leftDurationMin: 15,
       rightDurationMin: 0,
     });
@@ -86,6 +89,7 @@ describe('feeding validation and normalization', () => {
     ).toMatchObject({
       feedingType: 'mixed',
       milkAmountMl: 60,
+      breastMilkAmountMl: null,
       leftDurationMin: 10,
       rightDurationMin: 0,
     });
@@ -100,13 +104,20 @@ describe('feeding validation and normalization', () => {
     ).toThrow(FeedingValidationError);
   });
 
-  test('clears formula fields when changing to breast feeding', () => {
+  test('clears formula and bottled breast milk fields when changing to breast feeding', () => {
     const normalized = normalizeAndValidateFeedingInput(
-      input({ feedingType: 'breast', milkAmountMl: 80, leftDurationMin: 8, rightDurationMin: 0 }),
+      input({
+        feedingType: 'breast',
+        milkAmountMl: 80,
+        breastMilkAmountMl: 80,
+        leftDurationMin: 8,
+        rightDurationMin: 0,
+      }),
       nowMs,
     );
 
     expect(normalized.milkAmountMl).toBeNull();
+    expect(normalized.breastMilkAmountMl).toBeNull();
   });
 
   test('allows clock skew up to five seconds and rejects a later future time', () => {
@@ -131,7 +142,47 @@ describe('feeding validation and normalization', () => {
     const normalized = normalizeAndValidateFeedingInput(input({ note: '' }), nowMs);
 
     expect(serializeFeedingCreatePayload(normalized)).toBe(
-      `{"eventTimeMs":${nowMs},"feedingType":"formula","milkAmountMl":60,"leftDurationMin":null,"rightDurationMin":null,"note":null}`,
+      `{"eventTimeMs":${nowMs},"feedingType":"formula","milkAmountMl":60,"breastMilkAmountMl":null,"leftDurationMin":null,"rightDurationMin":null,"note":null}`,
     );
+  });
+
+  test('accepts bottled breast milk and clears formula and duration fields', () => {
+    expect(
+      normalizeAndValidateFeedingInput(
+        input({
+          feedingType: 'bottle_breast',
+          milkAmountMl: null,
+          breastMilkAmountMl: 80,
+        }),
+        nowMs,
+      ),
+    ).toMatchObject({
+      feedingType: 'bottle_breast',
+      milkAmountMl: null,
+      breastMilkAmountMl: 80,
+      leftDurationMin: null,
+      rightDurationMin: null,
+    });
+  });
+
+  test.each([
+    { milkAmountMl: null, breastMilkAmountMl: 80, leftDurationMin: 10, rightDurationMin: 0 },
+    { milkAmountMl: 40, breastMilkAmountMl: null, leftDurationMin: 10, rightDurationMin: 0 },
+    { milkAmountMl: 40, breastMilkAmountMl: 80, leftDurationMin: null, rightDurationMin: null },
+    { milkAmountMl: 40, breastMilkAmountMl: 80, leftDurationMin: 10, rightDurationMin: 0 },
+  ])('accepts valid mixed components %#', (values) => {
+    expect(
+      normalizeAndValidateFeedingInput(input({ feedingType: 'mixed', ...values }), nowMs),
+    ).toMatchObject({ feedingType: 'mixed', ...values });
+  });
+
+  test.each([
+    { milkAmountMl: 40, breastMilkAmountMl: null, leftDurationMin: null, rightDurationMin: null },
+    { milkAmountMl: null, breastMilkAmountMl: 80, leftDurationMin: null, rightDurationMin: null },
+    { milkAmountMl: null, breastMilkAmountMl: null, leftDurationMin: 10, rightDurationMin: 0 },
+  ])('rejects mixed feeding with only one component %#', (values) => {
+    expect(() =>
+      normalizeAndValidateFeedingInput(input({ feedingType: 'mixed', ...values }), nowMs),
+    ).toThrow(FeedingValidationError);
   });
 });

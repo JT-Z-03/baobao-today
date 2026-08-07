@@ -4,7 +4,7 @@
 
 ## CSV：查看和分享
 
-CSV 包含宝宝资料和五类记录，不包含照片文件，只以 `has_photo` 表示大便记录是否带照片。当前 Android 1.0.1 源码的列契约固定为 32 列，顺序如下：
+CSV 包含宝宝资料和五类记录，不包含照片文件，只以 `has_photo` 表示大便记录是否带照片。当前列契约固定为 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`；喝奶方式为奶粉、亲喂母乳、瓶喂母乳和混合。顺序如下：
 
 ```text
 record_id,baby_name,baby_birth_date,record_type,record_type_label,
@@ -13,7 +13,7 @@ left_duration_min,right_duration_min,poop_color,poop_color_label,
 poop_texture,poop_texture_label,poop_amount,poop_amount_label,has_photo,
 pee_color,pee_color_label,pee_amount,pee_amount_label,sleep_status,
 sleep_status_label,sleep_start_time,sleep_end_time,sleep_duration_minutes,
-other_title,note,created_at,updated_at
+other_title,note,created_at,updated_at,breast_milk_amount_ml
 ```
 
 文件使用 UTF-8 BOM、逗号分隔和 CRLF 行尾。记录按事件时间、创建时间和记录 ID 稳定排序；用户输入字段会处理常见的表格公式注入前缀。
@@ -22,7 +22,7 @@ CSV 不能导回应用，不能恢复照片、主题或提醒设置，因此不�
 
 ## ZIP：完整备份
 
-当前完整备份格式为 `formatVersion=1`，归档包含：
+当前完整备份新建时写入 `formatVersion=2`，恢复支持历史 `formatVersion=1` 和当前 `formatVersion=2`。归档包含：
 
 - `manifest.json`：格式、版本、应用/schema 信息、记录计数、照片计数、总大小和 SHA-256 完整性信息。
 - `baby.json`：宝宝资料。

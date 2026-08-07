@@ -24,7 +24,7 @@ export interface BackupSnapshotDatabase {
 
 const recordColumns = `
   id, client_request_id, create_payload_hash, type, event_time_ms, record_date, sort_time_ms,
-  created_at_ms, updated_at_ms, note, feeding_type, milk_amount_ml, left_duration_min,
+  created_at_ms, updated_at_ms, note, feeding_type, milk_amount_ml, breast_milk_amount_ml, left_duration_min,
   right_duration_min, poop_color, poop_texture, poop_amount, photo_uri, pee_color, pee_amount,
   sleep_start_ms, sleep_end_ms, sleep_status, other_title
 `;

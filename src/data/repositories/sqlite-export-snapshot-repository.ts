@@ -15,8 +15,9 @@ type ExportRow = {
   created_at_ms: number;
   updated_at_ms: number;
   note: string | null;
-  feeding_type: 'formula' | 'breast' | 'mixed' | null;
+  feeding_type: 'formula' | 'breast' | 'bottle_breast' | 'mixed' | null;
   milk_amount_ml: number | null;
+  breast_milk_amount_ml: number | null;
   left_duration_min: number | null;
   right_duration_min: number | null;
   poop_color: 'yellow' | 'green' | 'brown' | 'black' | 'red' | 'other' | null;
@@ -68,6 +69,7 @@ function mapRow(row: ExportRow): ExportRecord {
     return {
       ...base(row), type: 'feeding', feedingType: row.feeding_type,
       milkAmountMl: row.milk_amount_ml,
+      breastMilkAmountMl: row.breast_milk_amount_ml,
       leftDurationMin: row.left_duration_min,
       rightDurationMin: row.right_duration_min,
     };
@@ -98,7 +100,7 @@ function mapRow(row: ExportRow): ExportRecord {
 
 const exportColumns = `
   id, type, event_time_ms, record_date, created_at_ms, updated_at_ms, note,
-  feeding_type, milk_amount_ml, left_duration_min, right_duration_min,
+  feeding_type, milk_amount_ml, breast_milk_amount_ml, left_duration_min, right_duration_min,
   poop_color, poop_texture, poop_amount,
   CASE WHEN photo_uri IS NULL THEN 0 ELSE 1 END AS has_photo,
   pee_color, pee_amount, sleep_start_ms, sleep_end_ms, sleep_status, other_title

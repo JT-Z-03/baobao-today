@@ -16,7 +16,16 @@ import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
 import { keyboardAvoidingBehavior, useFormKeyboardVerticalOffset } from '@/components/ui/keyboard-behavior';
 import { Radius, Spacing, Typography } from '@/constants/theme';
-import type { FeedingCreateInput, FeedingType } from '@/domain/feeding/feeding';
+import {
+  inferFeedingComponents,
+  type FeedingComponent,
+  type FeedingCreateInput,
+  type FeedingType,
+} from '@/domain/feeding/feeding';
+import {
+  FeedingValidationError,
+  type FeedingValidationField,
+} from '@/domain/feeding/feeding-validation';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -48,7 +57,8 @@ export function createSubmissionLock() {
 
 const typeOptions: readonly { value: FeedingType; label: string; accessibilityLabel: string }[] = [
   { value: 'formula', label: '奶粉', accessibilityLabel: '选择奶粉' },
-  { value: 'breast', label: '母乳', accessibilityLabel: '选择母乳' },
+  { value: 'breast', label: '亲喂母乳', accessibilityLabel: '选择亲喂母乳' },
+  { value: 'bottle_breast', label: '瓶喂母乳', accessibilityLabel: '选择瓶喂母乳' },
   { value: 'mixed', label: '混合', accessibilityLabel: '选择混合' },
 ];
 
@@ -98,6 +108,7 @@ type NumericFieldProps = {
   value: string;
   suffix: string;
   step?: number;
+  error?: string | null;
   onChange(value: string): void;
 };
 
@@ -107,6 +118,7 @@ function NumericField({
   value,
   suffix,
   step,
+  error,
   onChange,
 }: NumericFieldProps) {
   const theme = useTheme();
@@ -116,7 +128,7 @@ function NumericField({
   };
 
   return (
-    <FormField label={label}>
+    <FormField label={label} error={error}>
       <View style={styles.numberRow}>
         {step && (
           <Pressable
@@ -176,8 +188,15 @@ export function FeedingForm({
   const [feedingType, setFeedingType] = useState(initialInput.feedingType);
   const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
   const [milkAmount, setMilkAmount] = useState(() => initialInput.milkAmountMl?.toString() ?? '');
+  const [breastMilkAmount, setBreastMilkAmount] = useState(
+    () => initialInput.breastMilkAmountMl?.toString() ?? '',
+  );
   const [leftDuration, setLeftDuration] = useState(() => initialInput.leftDurationMin?.toString() ?? '0');
   const [rightDuration, setRightDuration] = useState(() => initialInput.rightDurationMin?.toString() ?? '0');
+  const [mixedComponents, setMixedComponents] = useState<FeedingComponent[]>(
+    () => inferFeedingComponents(initialInput),
+  );
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FeedingValidationField, string>>>({});
   const [note, setNote] = useState(initialInput.note ?? '');
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [saving, setSaving] = useState(false);
@@ -187,18 +206,70 @@ export function FeedingForm({
     const mode = pickerMode;
     setPickerMode(null);
     if (!mode) return;
+    clearFieldError('eventTimeMs');
     setEventTimeMs((current) =>
       mode === 'date' ? updateDatePart(current, selectedDate) : updateTimePart(current, selectedDate),
     );
   };
 
+  const clearFieldError = (field: FeedingValidationField) => {
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const { [field]: _removed, ...remaining } = current;
+      return remaining;
+    });
+  };
+
+  const toggleMixedComponent = (component: FeedingComponent) => {
+    setMixedComponents((current) => (
+      current.includes(component)
+        ? current.filter((item) => item !== component)
+        : [...current, component]
+    ));
+    clearFieldError('feedingType');
+    if (component === 'formula') clearFieldError('milkAmountMl');
+    if (component === 'bottle_breast') clearFieldError('breastMilkAmountMl');
+    if (component === 'breast') {
+      clearFieldError('leftDurationMin');
+      clearFieldError('rightDurationMin');
+    }
+  };
+
+  const selectFeedingType = (type: FeedingType) => {
+    setFeedingType(type);
+    clearFieldError('feedingType');
+    if (type === 'formula') clearFieldError('milkAmountMl');
+    if (type === 'bottle_breast') clearFieldError('breastMilkAmountMl');
+    if (type === 'breast') {
+      clearFieldError('leftDurationMin');
+      clearFieldError('rightDurationMin');
+    }
+  };
+
   const handleSave = async () => {
+    const selected = new Set(mixedComponents);
+    const usesFormula = feedingType === 'formula' || (feedingType === 'mixed' && selected.has('formula'));
+    const usesBottleBreast = feedingType === 'bottle_breast'
+      || (feedingType === 'mixed' && selected.has('bottle_breast'));
+    const usesBreast = feedingType === 'breast' || (feedingType === 'mixed' && selected.has('breast'));
+    const nextFieldErrors: Partial<Record<FeedingValidationField, string>> = {};
+    if (feedingType === 'mixed' && mixedComponents.length < 2) {
+      nextFieldErrors.feedingType = '混合喂养至少选择两项';
+    }
+    if (usesFormula && milkAmount === '') nextFieldErrors.milkAmountMl = '请填写奶粉量';
+    if (usesBottleBreast && breastMilkAmount === '') nextFieldErrors.breastMilkAmountMl = '请填写瓶喂母乳量';
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
     const input: FeedingCreateInput = {
       eventTimeMs,
       feedingType,
-      milkAmountMl: feedingType === 'breast' ? null : toInputNumber(milkAmount),
-      leftDurationMin: feedingType === 'formula' ? null : toInputNumber(leftDuration),
-      rightDurationMin: feedingType === 'formula' ? null : toInputNumber(rightDuration),
+      milkAmountMl: usesFormula ? toInputNumber(milkAmount) : null,
+      breastMilkAmountMl: usesBottleBreast ? toInputNumber(breastMilkAmount) : null,
+      leftDurationMin: usesBreast ? toInputNumber(leftDuration) : null,
+      rightDurationMin: usesBreast ? toInputNumber(rightDuration) : null,
       note: note || null,
     };
 
@@ -208,15 +279,25 @@ export function FeedingForm({
       try {
         await onSave(input, clientRequestId);
       } catch (error) {
-        setErrorMessage(toSafeUiMessage(error, '保存失败，请检查填写内容后重试。'));
+        if (error instanceof FeedingValidationError) {
+          setFieldErrors((current) => ({ ...current, [error.field]: error.message }));
+        } else {
+          setErrorMessage(toSafeUiMessage(error, '保存失败，请检查填写内容后重试。'));
+        }
       } finally {
         setSaving(false);
       }
     });
   };
 
-  const showsFormula = feedingType === 'formula' || feedingType === 'mixed';
-  const showsBreast = feedingType === 'breast' || feedingType === 'mixed';
+  const selected = new Set(mixedComponents);
+  const showsFormula = feedingType === 'formula' || (feedingType === 'mixed' && selected.has('formula'));
+  const showsBottleBreast = feedingType === 'bottle_breast'
+    || (feedingType === 'mixed' && selected.has('bottle_breast'));
+  const showsBreast = feedingType === 'breast' || (feedingType === 'mixed' && selected.has('breast'));
+  const mixedComponentsError = feedingType === 'mixed' && mixedComponents.length < 2
+    ? '混合喂养至少选择两项'
+    : fieldErrors.feedingType;
 
   return (
     <KeyboardAvoidingView
@@ -228,7 +309,7 @@ export function FeedingForm({
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}>
-        <FormField label="喂养方式">
+        <FormField label="喂养方式" error={feedingType === 'mixed' ? null : fieldErrors.feedingType}>
           <View style={styles.segment}>
             {typeOptions.map((option) => {
               const selected = feedingType === option.value;
@@ -237,7 +318,7 @@ export function FeedingForm({
                   key={option.value}
                   accessibilityLabel={option.accessibilityLabel}
                   label={option.label}
-                  onPress={() => setFeedingType(option.value)}
+                  onPress={() => selectFeedingType(option.value)}
                   selected={selected}
                 />
               );
@@ -245,7 +326,32 @@ export function FeedingForm({
           </View>
         </FormField>
 
-        <FormField label="记录时间">
+        {feedingType === 'mixed' && (
+          <FormField label="混合组成" error={mixedComponentsError}>
+            <View style={styles.segment}>
+              <ChoiceChip
+                accessibilityLabel="混合包含亲喂母乳"
+                label="亲喂母乳"
+                onPress={() => toggleMixedComponent('breast')}
+                selected={selected.has('breast')}
+              />
+              <ChoiceChip
+                accessibilityLabel="混合包含瓶喂母乳"
+                label="瓶喂母乳"
+                onPress={() => toggleMixedComponent('bottle_breast')}
+                selected={selected.has('bottle_breast')}
+              />
+              <ChoiceChip
+                accessibilityLabel="混合包含奶粉"
+                label="奶粉"
+                onPress={() => toggleMixedComponent('formula')}
+                selected={selected.has('formula')}
+              />
+            </View>
+          </FormField>
+        )}
+
+        <FormField label="记录时间" error={fieldErrors.eventTimeMs}>
           <View style={styles.timeRow}>
             <Pressable
               accessibilityLabel="修改记录日期"
@@ -277,12 +383,31 @@ export function FeedingForm({
 
         {showsFormula && (
           <NumericField
-            label="奶量"
-            accessibilityLabel="奶量"
+            label="奶粉量"
+            accessibilityLabel="奶粉量"
             value={milkAmount}
             suffix="ml"
             step={10}
-            onChange={setMilkAmount}
+            error={fieldErrors.milkAmountMl}
+            onChange={(value) => {
+              setMilkAmount(value);
+              clearFieldError('milkAmountMl');
+            }}
+          />
+        )}
+
+        {showsBottleBreast && (
+          <NumericField
+            label="瓶喂母乳量"
+            accessibilityLabel="瓶喂母乳量"
+            value={breastMilkAmount}
+            suffix="ml"
+            step={10}
+            error={fieldErrors.breastMilkAmountMl}
+            onChange={(value) => {
+              setBreastMilkAmount(value);
+              clearFieldError('breastMilkAmountMl');
+            }}
           />
         )}
 
@@ -293,24 +418,35 @@ export function FeedingForm({
               accessibilityLabel="左侧时长"
               value={leftDuration}
               suffix="分钟"
-              onChange={setLeftDuration}
+              error={fieldErrors.leftDurationMin}
+              onChange={(value) => {
+                setLeftDuration(value);
+                clearFieldError('leftDurationMin');
+              }}
             />
             <NumericField
               label="右侧"
               accessibilityLabel="右侧时长"
               value={rightDuration}
               suffix="分钟"
-              onChange={setRightDuration}
+              error={fieldErrors.rightDurationMin}
+              onChange={(value) => {
+                setRightDuration(value);
+                clearFieldError('rightDurationMin');
+              }}
             />
           </View>
         )}
 
-        <FormField label="备注" optional>
+        <FormField label="备注" optional error={fieldErrors.note}>
           <AppTextInput
             accessibilityLabel="备注"
             maxLength={200}
             multiline
-            onChangeText={setNote}
+            onChangeText={(value) => {
+              setNote(value);
+              clearFieldError('note');
+            }}
             placeholder="选填"
             value={note}
           />

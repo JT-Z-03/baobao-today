@@ -35,6 +35,7 @@ type FeedingRow = {
   note: string | null;
   feeding_type: FeedingType;
   milk_amount_ml: number | null;
+  breast_milk_amount_ml: number | null;
   left_duration_min: number | null;
   right_duration_min: number | null;
 };
@@ -42,6 +43,8 @@ type FeedingRow = {
 type SummaryRow = {
   feeding_count: number;
   formula_total_ml: number;
+  breast_milk_total_ml: number;
+  measurable_total_ml: number;
 };
 
 type MilkAmountRow = { milk_amount_ml: number };
@@ -69,7 +72,7 @@ const feedingColumns = `
   id, client_request_id, create_payload_hash, type,
   event_time_ms, record_date, sort_time_ms,
   created_at_ms, updated_at_ms, note,
-  feeding_type, milk_amount_ml, left_duration_min, right_duration_min
+  feeding_type, milk_amount_ml, breast_milk_amount_ml, left_duration_min, right_duration_min
 `;
 
 function mapRow(row: FeedingRow): FeedingRecord {
@@ -87,6 +90,7 @@ function mapRow(row: FeedingRow): FeedingRecord {
     note: row.note,
     feedingType: row.feeding_type,
     milkAmountMl: row.milk_amount_ml,
+    breastMilkAmountMl: row.breast_milk_amount_ml,
     leftDurationMin: row.left_duration_min,
     rightDurationMin: row.right_duration_min,
   };
@@ -127,8 +131,9 @@ export class SQLiteFeedingRepository implements FeedingRepository {
               id, client_request_id, create_payload_hash, type,
               event_time_ms, record_date, sort_time_ms,
               created_at_ms, updated_at_ms, note,
-              feeding_type, milk_amount_ml, left_duration_min, right_duration_min
-            ) VALUES (?, ?, ?, 'feeding', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              feeding_type, milk_amount_ml, breast_milk_amount_ml,
+              left_duration_min, right_duration_min
+            ) VALUES (?, ?, ?, 'feeding', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
           command.id,
           command.clientRequestId,
@@ -141,6 +146,7 @@ export class SQLiteFeedingRepository implements FeedingRepository {
           normalized.note,
           normalized.feedingType,
           normalized.milkAmountMl,
+          normalized.breastMilkAmountMl,
           normalized.leftDurationMin,
           normalized.rightDurationMin,
         );
@@ -178,7 +184,7 @@ export class SQLiteFeedingRepository implements FeedingRepository {
         `
           UPDATE records
           SET event_time_ms = ?, record_date = ?, sort_time_ms = ?, updated_at_ms = ?,
-              note = ?, feeding_type = ?, milk_amount_ml = ?,
+              note = ?, feeding_type = ?, milk_amount_ml = ?, breast_milk_amount_ml = ?,
               left_duration_min = ?, right_duration_min = ?
           WHERE id = ? AND type = 'feeding'
         `,
@@ -189,6 +195,7 @@ export class SQLiteFeedingRepository implements FeedingRepository {
         normalized.note,
         normalized.feedingType,
         normalized.milkAmountMl,
+        normalized.breastMilkAmountMl,
         normalized.leftDurationMin,
         normalized.rightDurationMin,
         id,
@@ -249,7 +256,10 @@ export class SQLiteFeedingRepository implements FeedingRepository {
       `
         SELECT
           COUNT(*) AS feeding_count,
-          COALESCE(SUM(milk_amount_ml), 0) AS formula_total_ml
+          COALESCE(SUM(milk_amount_ml), 0) AS formula_total_ml,
+          COALESCE(SUM(breast_milk_amount_ml), 0) AS breast_milk_total_ml,
+          COALESCE(SUM(COALESCE(milk_amount_ml, 0) + COALESCE(breast_milk_amount_ml, 0)), 0)
+            AS measurable_total_ml
         FROM records
         WHERE type = 'feeding' AND record_date = ?
       `,
@@ -258,6 +268,8 @@ export class SQLiteFeedingRepository implements FeedingRepository {
     return {
       feedingCount: row?.feeding_count ?? 0,
       formulaTotalMl: row?.formula_total_ml ?? 0,
+      breastMilkTotalMl: row?.breast_milk_total_ml ?? 0,
+      measurableTotalMl: row?.measurable_total_ml ?? 0,
     };
   }
 }

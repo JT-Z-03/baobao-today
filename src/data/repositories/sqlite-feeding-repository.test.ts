@@ -58,6 +58,7 @@ function formulaInput(eventTimeMs = july11Morning, milkAmountMl = 60) {
     eventTimeMs,
     feedingType: 'formula' as const,
     milkAmountMl,
+    breastMilkAmountMl: null,
     leftDurationMin: null,
     rightDurationMin: null,
     note: null,
@@ -130,6 +131,29 @@ describe('SQLiteFeedingRepository host SQLite integration', () => {
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
   });
 
+  test('round-trips bottled breast milk and includes it in idempotency', async () => {
+    const input = {
+      eventTimeMs: july11Morning,
+      feedingType: 'bottle_breast' as const,
+      milkAmountMl: null,
+      breastMilkAmountMl: 80,
+      leftDurationMin: null,
+      rightDurationMin: null,
+      note: null,
+    };
+    const first = await repository.create({
+      id: 'bottle-1', clientRequestId: 'request-1', input, nowMs: july11Morning,
+    });
+
+    expect(first).toMatchObject({ feedingType: 'bottle_breast', breastMilkAmountMl: 80 });
+    await expect(repository.create({
+      id: 'bottle-2',
+      clientRequestId: 'request-1',
+      input: { ...input, breastMilkAmountMl: 90 },
+      nowMs: july11Morning,
+    })).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
   test('rejects a request id already used by another record type as an idempotency conflict', async () => {
     sqlite.prepare(`
       INSERT INTO records (
@@ -199,63 +223,86 @@ describe('SQLiteFeedingRepository host SQLite integration', () => {
       nowMs: july11Morning,
     });
     await repository.create({
+      id: 'bottle',
+      clientRequestId: 'request-bottle',
+      input: {
+        ...formulaInput(july11Morning + 60_000),
+        feedingType: 'bottle_breast',
+        milkAmountMl: null,
+        breastMilkAmountMl: 80,
+      },
+      nowMs: july11Morning + 60_000,
+    });
+    await repository.create({
       id: 'mixed',
       clientRequestId: 'request-mixed',
       input: {
-        ...formulaInput(july11Morning + 60_000, 40),
+        ...formulaInput(july11Morning + 120_000, 40),
         feedingType: 'mixed',
+        breastMilkAmountMl: 50,
         leftDurationMin: 8,
         rightDurationMin: 0,
       },
-      nowMs: july11Morning + 60_000,
+      nowMs: july11Morning + 120_000,
     });
     await repository.create({
       id: 'breast',
       clientRequestId: 'request-breast',
       input: {
-        ...formulaInput(july11Morning + 120_000),
+        ...formulaInput(july11Morning + 180_000),
         feedingType: 'breast',
         milkAmountMl: null,
         leftDurationMin: 0,
         rightDurationMin: 12,
       },
-      nowMs: july11Morning + 120_000,
+      nowMs: july11Morning + 180_000,
     });
 
     await expect(repository.getDailySummary('2026-07-11')).resolves.toEqual({
-      feedingCount: 3,
+      feedingCount: 4,
       formulaTotalMl: 100,
+      breastMilkTotalMl: 130,
+      measurableTotalMl: 230,
     });
     await expect(repository.getLatest()).resolves.toMatchObject({ id: 'breast' });
     await expect(repository.getLatestMilkAmount()).resolves.toBe(40);
 
     await repository.update('formula', formulaInput(july11Morning, 90), july11Morning + 180_000);
     await expect(repository.getDailySummary('2026-07-11')).resolves.toEqual({
-      feedingCount: 3,
+      feedingCount: 4,
       formulaTotalMl: 130,
+      breastMilkTotalMl: 130,
+      measurableTotalMl: 260,
     });
 
     const previousDay = new Date(2026, 6, 10, 20, 0).getTime();
     await repository.update('mixed', {
       ...formulaInput(previousDay, 40),
       feedingType: 'mixed',
+      breastMilkAmountMl: 50,
       leftDurationMin: 8,
       rightDurationMin: 0,
     }, july11Morning + 240_000);
     await expect(repository.getDailySummary('2026-07-11')).resolves.toEqual({
-      feedingCount: 2,
+      feedingCount: 3,
       formulaTotalMl: 90,
+      breastMilkTotalMl: 80,
+      measurableTotalMl: 170,
     });
     await expect(repository.getDailySummary('2026-07-10')).resolves.toEqual({
       feedingCount: 1,
       formulaTotalMl: 40,
+      breastMilkTotalMl: 50,
+      measurableTotalMl: 90,
     });
 
     await repository.delete('formula');
     await expect(repository.getById('formula')).resolves.toBeNull();
     await expect(repository.getDailySummary('2026-07-11')).resolves.toEqual({
-      feedingCount: 1,
+      feedingCount: 2,
       formulaTotalMl: 0,
+      breastMilkTotalMl: 80,
+      measurableTotalMl: 80,
     });
   });
 

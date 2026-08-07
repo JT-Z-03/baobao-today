@@ -29,6 +29,10 @@ type Dependencies = {
 
 export class RestoreStateError extends Error {}
 
+function isReminderSyncError(value: unknown): value is { kind: 'sync-error' } {
+  return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'sync-error';
+}
+
 export function createRestoreService(dependencies: Dependencies) {
   let prepared: PreparedBackup | null = null;
 
@@ -104,7 +108,9 @@ export function createRestoreService(dependencies: Dependencies) {
           try { await dependencies.photoGateway.deleteManaged(oldPath); }
           catch { if (!warnings.includes('old-photo-cleanup')) warnings.push('old-photo-cleanup'); }
         }
-        try { await dependencies.reminderSync(); }
+        try {
+          if (isReminderSyncError(await dependencies.reminderSync())) warnings.push('reminder-sync');
+        }
         catch { warnings.push('reminder-sync'); }
         try { await dependencies.refreshAppState(); }
         catch { warnings.push('app-refresh'); }

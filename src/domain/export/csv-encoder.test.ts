@@ -12,12 +12,50 @@ function snapshot(records: ExportSnapshot['records']): ExportSnapshot {
 }
 
 describe('CSV encoder', () => {
-  test('uses a fixed 32-column header, UTF-8 BOM, and CRLF for an empty snapshot', () => {
+  test('keeps the original 32 columns and appends bottled breast milk as column 33', () => {
+    expect(CSV_EXPORT_COLUMNS).toHaveLength(33);
+    expect(CSV_EXPORT_COLUMNS.slice(0, 32)).toEqual([
+      'record_id', 'baby_name', 'baby_birth_date', 'record_type', 'record_type_label',
+      'record_date', 'event_time', 'feeding_type', 'feeding_type_label', 'milk_amount_ml',
+      'left_duration_min', 'right_duration_min', 'poop_color', 'poop_color_label',
+      'poop_texture', 'poop_texture_label', 'poop_amount', 'poop_amount_label', 'has_photo',
+      'pee_color', 'pee_color_label', 'pee_amount', 'pee_amount_label', 'sleep_status',
+      'sleep_status_label', 'sleep_start_time', 'sleep_end_time', 'sleep_duration_minutes',
+      'other_title', 'note', 'created_at', 'updated_at',
+    ]);
+    expect(CSV_EXPORT_COLUMNS[32]).toBe('breast_milk_amount_ml');
+  });
+
+  test('uses a fixed 33-column header, UTF-8 BOM, and CRLF for an empty snapshot', () => {
     const csv = encodeExportSnapshotCsv(snapshot([]));
-    expect(CSV_EXPORT_COLUMNS).toHaveLength(32);
     expect(csv.startsWith('\uFEFF')).toBe(true);
     expect(csv).toBe(`\uFEFF${CSV_EXPORT_COLUMNS.join(',')}\r\n`);
     expect(csv.replace(/\r\n/g, '')).not.toContain('\n');
+  });
+
+  test('exports bottle and formula amounts independently for mixed feeding', () => {
+    const csv = encodeExportSnapshotCsv(snapshot([{
+      id: 'mixed', type: 'feeding', eventTimeMs: localMs(11, 1), recordDate: '2026-07-11',
+      createdAtMs: localMs(11, 1), updatedAtMs: localMs(11, 1), note: null,
+      feedingType: 'mixed', milkAmountMl: 40, breastMilkAmountMl: 80,
+      leftDurationMin: null, rightDurationMin: null,
+    }]));
+    const row = csv.split('\r\n')[1]!.split(',');
+    expect(row[7]).toBe('mixed');
+    expect(row[9]).toBe('40');
+    expect(row[32]).toBe('80');
+  });
+
+  test('labels bottle_breast feeding as 瓶喂母乳', () => {
+    const csv = encodeExportSnapshotCsv(snapshot([{
+      id: 'bottle-breast', type: 'feeding', eventTimeMs: localMs(11, 1), recordDate: '2026-07-11',
+      createdAtMs: localMs(11, 1), updatedAtMs: localMs(11, 1), note: null,
+      feedingType: 'bottle_breast', milkAmountMl: null, breastMilkAmountMl: 80,
+      leftDurationMin: null, rightDurationMin: null,
+    }]));
+    const row = csv.split('\r\n')[1]!.split(',');
+    expect(row[7]).toBe('bottle_breast');
+    expect(row[8]).toBe('瓶喂母乳');
   });
 
   test('maps all five source record types without internal identifiers or photo paths', () => {
@@ -25,7 +63,7 @@ describe('CSV encoder', () => {
       {
         id: 'feeding-1', type: 'feeding', eventTimeMs: localMs(11, 1), recordDate: '2026-07-11',
         createdAtMs: localMs(11, 1), updatedAtMs: localMs(11, 1), note: null,
-        feedingType: 'mixed', milkAmountMl: 60, leftDurationMin: 10, rightDurationMin: 0,
+        feedingType: 'mixed', milkAmountMl: 60, breastMilkAmountMl: null, leftDurationMin: 10, rightDurationMin: 0,
       },
       {
         id: 'poop-1', type: 'poop', eventTimeMs: localMs(11, 2), recordDate: '2026-07-11',
@@ -88,7 +126,7 @@ describe('CSV encoder', () => {
       const csv = encodeExportSnapshotCsv(snapshot([{
         id: 'formula-1', type: 'feeding', eventTimeMs: localMs(11, 4), recordDate: '2026-07-11',
         createdAtMs: localMs(11, 4), updatedAtMs: localMs(11, 4),
-        feedingType: 'formula', milkAmountMl: 60, leftDurationMin: null, rightDurationMin: null,
+        feedingType: 'formula', milkAmountMl: 60, breastMilkAmountMl: null, leftDurationMin: null, rightDurationMin: null,
         note: dangerous,
       }]));
       expect(csv).toContain(`'${dangerous}`);
@@ -114,12 +152,12 @@ describe('CSV encoder', () => {
       {
         id: 'formula', type: 'feeding', eventTimeMs: localMs(11, 1), recordDate: '2026-07-11',
         createdAtMs: localMs(11, 1), updatedAtMs: localMs(11, 1), note: null,
-        feedingType: 'formula', milkAmountMl: 70, leftDurationMin: null, rightDurationMin: null,
+        feedingType: 'formula', milkAmountMl: 70, breastMilkAmountMl: null, leftDurationMin: null, rightDurationMin: null,
       },
       {
         id: 'breast', type: 'feeding', eventTimeMs: localMs(11, 2), recordDate: '2026-07-11',
         createdAtMs: localMs(11, 2), updatedAtMs: localMs(11, 2), note: null,
-        feedingType: 'breast', milkAmountMl: null, leftDurationMin: 12, rightDurationMin: 8,
+        feedingType: 'breast', milkAmountMl: null, breastMilkAmountMl: null, leftDurationMin: 12, rightDurationMin: 8,
       },
       {
         id: 'poop-none', type: 'poop', eventTimeMs: localMs(11, 3), recordDate: '2026-07-11',
@@ -134,7 +172,7 @@ describe('CSV encoder', () => {
     ]));
 
     expect(csv).toContain('formula,奶粉,70,,,');
-    expect(csv).toContain('breast,母乳,,12,8');
+    expect(csv).toContain('breast,亲喂母乳,,12,8');
     const poopRow = csv.split('\r\n').find((row) => row.startsWith('poop-none,'));
     expect(poopRow?.split(',')[18]).toBe('false');
     expect(csv).toContain('completed,已完成,2026-07-11 04:00:00,2026-07-11 05:00:00,60');

@@ -11,13 +11,20 @@ export function formatEventTime(eventTimeMs: number) {
 
 export function formatFeedingDetails(record: FeedingRecord) {
   if (record.feedingType === 'formula') return `奶粉 ${record.milkAmountMl}ml`;
+  if (record.feedingType === 'bottle_breast') return `瓶喂母乳 ${record.breastMilkAmountMl}ml`;
 
   const breastParts: string[] = [];
   if ((record.leftDurationMin ?? 0) > 0) breastParts.push(`左${record.leftDurationMin}分钟`);
   if ((record.rightDurationMin ?? 0) > 0) breastParts.push(`右${record.rightDurationMin}分钟`);
 
-  if (record.feedingType === 'breast') return `母乳 ${breastParts.join(' / ')}`;
-  return `混合 ${[...breastParts, `奶粉${record.milkAmountMl}ml`].join(' / ')}`;
+  const duration = breastParts.join(' / ');
+  if (record.feedingType === 'breast') return `亲喂母乳 ${duration}`;
+
+  const mixedParts: string[] = [];
+  if (duration) mixedParts.push(`亲喂${duration}`);
+  if (record.breastMilkAmountMl !== null) mixedParts.push(`瓶喂母乳${record.breastMilkAmountMl}ml`);
+  if (record.milkAmountMl !== null) mixedParts.push(`奶粉${record.milkAmountMl}ml`);
+  return `混合 ${mixedParts.join(' · ')}`;
 }
 
 export function formatRelativePastTime(eventTimeMs: number, nowMs: number) {
