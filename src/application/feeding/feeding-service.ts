@@ -75,6 +75,7 @@ export function createFeedingService(
         eventTimeMs: dependencies.now(),
         feedingType: latest?.feedingType ?? ('formula' as const),
         milkAmountMl: latestMilkAmount ?? 60,
+        breastMilkAmountMl: null,
       };
     },
 

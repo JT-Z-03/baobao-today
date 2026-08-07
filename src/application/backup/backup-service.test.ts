@@ -8,7 +8,7 @@ const snapshot: BackupSnapshot = {
   records: [{
     id: 'poop-1', client_request_id: 'request-1', create_payload_hash: 'a'.repeat(64), type: 'poop',
     event_time_ms: 1, record_date: '2026-07-10', sort_time_ms: 1, created_at_ms: 1, updated_at_ms: 1,
-    note: null, feeding_type: null, milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
+    note: null, feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null, left_duration_min: null, right_duration_min: null,
     poop_color: 'yellow', poop_texture: null, poop_amount: null, source_photo_path: 'poop-photos/original.jpg',
     pee_color: null, pee_amount: null, sleep_start_ms: null, sleep_end_ms: null, sleep_status: null, other_title: null,
   }],
@@ -52,19 +52,50 @@ function setup(customSnapshot: BackupSnapshot = snapshot) {
   return { service: createBackupService(dependencies as never), workspace, archiveGateway, shareGateway, validationService, dependencies };
 }
 
+function snapshotWithBottleBreast(amount: number): BackupSnapshot {
+  const base = snapshot.records[0];
+  return {
+    ...snapshot,
+    records: [{
+      ...base,
+      id: 'feeding-bottle-breast',
+      client_request_id: 'request-feeding-bottle-breast',
+      type: 'feeding',
+      source_photo_path: null,
+      feeding_type: 'bottle_breast',
+      milk_amount_ml: null,
+      breast_milk_amount_ml: amount,
+      poop_color: null,
+    }],
+  };
+}
+
 describe('BackupService', () => {
   test('creates manifest, JSON, photo entry, validates the resulting archive, and shares only temporary backups', async () => {
     const { service, workspace, archiveGateway, shareGateway, validationService } = setup();
     const result = await service.createAndShare();
     expect(result.filename).toMatch(/^baobao-today-backup-[0-9-]+\.zip$/);
     expect(workspace.writeJson).toHaveBeenCalledWith('records.json', expect.not.stringContaining('poop-photos/original.jpg'));
-    expect(workspace.writeJson).toHaveBeenCalledWith('manifest.json', expect.stringContaining('"formatVersion": 1'));
+    expect(workspace.writeJson).toHaveBeenCalledWith('manifest.json', expect.stringContaining('"formatVersion": 2'));
     expect(archiveGateway.createArchive).toHaveBeenCalledWith('cache/backup.zip', expect.arrayContaining([
       { path: 'photos/poop-1.jpg', sourceUri: 'photos/original.jpg' },
     ]));
     expect(validationService.prepare).toHaveBeenCalledWith('cache/backup.zip', expect.stringContaining('verify-'));
     expect(shareGateway.share).toHaveBeenCalledWith('cache/backup.zip', result.filename);
     expect(workspace.cleanup).toHaveBeenCalled();
+  });
+
+  test('creates format version two with bottled breast milk in records.json', async () => {
+    const { service, workspace } = setup(snapshotWithBottleBreast(80));
+    await service.createAndShare();
+    expect(workspace.writeJson).toHaveBeenCalledWith(
+      'records.json',
+      expect.stringContaining('"breast_milk_amount_ml": 80'),
+    );
+    expect(workspace.writeJson).toHaveBeenCalledWith(
+      'manifest.json',
+      expect.stringContaining('"formatVersion": 2'),
+    );
   });
 
   test('fails complete backup when a referenced photo is missing and never archives or shares', async () => {
@@ -105,7 +136,7 @@ describe('BackupService', () => {
     const base = snapshot.records[0];
     const record = (id: string, type: typeof base.type, eventTimeMs: number) => ({
       ...base, id, client_request_id: `request-${id}`, type, event_time_ms: eventTimeMs,
-      sort_time_ms: eventTimeMs, source_photo_path: null, feeding_type: null, milk_amount_ml: null,
+      sort_time_ms: eventTimeMs, source_photo_path: null, feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null,
       poop_color: null, pee_color: null, pee_amount: null, sleep_start_ms: null, sleep_end_ms: null,
       sleep_status: null, other_title: null,
     });

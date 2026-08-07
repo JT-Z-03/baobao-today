@@ -20,6 +20,8 @@ function setup() {
   const base = `id,client_request_id,create_payload_hash,type,event_time_ms,record_date,sort_time_ms,created_at_ms,updated_at_ms`;
   sqlite.prepare(`INSERT INTO records (${base},feeding_type,milk_amount_ml)
     VALUES ('feeding-1','request-1',?,'feeding',1000,'2026-07-10',1000,1000,1000,'formula',60)`).run('1'.repeat(64));
+  sqlite.prepare(`INSERT INTO records (${base},feeding_type,breast_milk_amount_ml)
+    VALUES ('feeding-bottle-breast','request-bottle-breast',?,'feeding',1500,'2026-07-10',1500,1500,1500,'bottle_breast',80)`).run('3'.repeat(64));
   sqlite.prepare(`INSERT INTO records (${base},poop_color,photo_uri)
     VALUES ('poop-1','request-2',?,'poop',2000,'2026-07-10',2000,2000,2000,'yellow','poop-photos/private.jpg')`).run('2'.repeat(64));
   const query = {
@@ -39,10 +41,11 @@ describe('SQLiteBackupSnapshotRepository', () => {
     const { sqlite, repository, exclusiveCalls } = setup();
     const snapshot = await repository.getSnapshot();
     expect(exclusiveCalls()).toBe(1);
-    expect(snapshot.sourceSchemaVersion).toBe(8);
+    expect(snapshot.sourceSchemaVersion).toBe(9);
     expect(snapshot.baby).toEqual({ id: 'baby-1', name: '小宝', birth_date: '2026-06-01', created_at_ms: 1, updated_at_ms: 2 });
     expect(snapshot.records).toEqual([
       expect.objectContaining({ id: 'feeding-1', client_request_id: 'request-1', feeding_type: 'formula', milk_amount_ml: 60, source_photo_path: null }),
+      expect.objectContaining({ id: 'feeding-bottle-breast', feeding_type: 'bottle_breast', breast_milk_amount_ml: 80, source_photo_path: null }),
       expect.objectContaining({ id: 'poop-1', source_photo_path: 'poop-photos/private.jpg' }),
     ]);
     expect(snapshot.settings).toEqual({ theme_mode: 'dark', feeding_reminder_enabled: true, feeding_reminder_interval_minutes: 120 });

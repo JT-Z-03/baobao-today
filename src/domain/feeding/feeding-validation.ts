@@ -1,17 +1,20 @@
 import type {
+  FeedingComponent,
   FeedingCreateInput,
   FeedingType,
   NormalizedFeedingInput,
 } from '@/domain/feeding/feeding';
+import { inferFeedingComponents } from '@/domain/feeding/feeding';
 
 export const MAX_MILK_AMOUNT_ML = 999;
 export const MAX_BREAST_DURATION_MIN = 180;
 export const FEEDING_FUTURE_TOLERANCE_MS = 5_000;
 
-type FeedingValidationField =
+export type FeedingValidationField =
   | 'eventTimeMs'
   | 'feedingType'
   | 'milkAmountMl'
+  | 'breastMilkAmountMl'
   | 'leftDurationMin'
   | 'rightDurationMin'
   | 'note';
@@ -35,16 +38,15 @@ function validateEventTime(eventTimeMs: number, nowMs: number) {
   }
 }
 
-function validateMilkAmount(milkAmountMl: number | null) {
-  if (
-    !Number.isInteger(milkAmountMl) ||
-    milkAmountMl === null ||
-    milkAmountMl <= 0 ||
-    milkAmountMl > MAX_MILK_AMOUNT_ML
-  ) {
-    throw new FeedingValidationError('milkAmountMl', '奶量必须是1至999ml的整数');
+function validateAmount(
+  value: number | null,
+  field: 'milkAmountMl' | 'breastMilkAmountMl',
+  label: string,
+) {
+  if (value === null || !Number.isInteger(value) || value <= 0 || value > MAX_MILK_AMOUNT_ML) {
+    throw new FeedingValidationError(field, `${label}必须是1至999ml的整数`);
   }
-  return milkAmountMl;
+  return value;
 }
 
 function validateDuration(value: number | null, field: 'leftDurationMin' | 'rightDurationMin') {
@@ -68,7 +70,7 @@ function normalizeNote(note: string | null) {
 }
 
 function assertFeedingType(value: FeedingType) {
-  if (value !== 'formula' && value !== 'breast' && value !== 'mixed') {
+  if (value !== 'formula' && value !== 'breast' && value !== 'bottle_breast' && value !== 'mixed') {
     throw new FeedingValidationError('feedingType', '请选择喂养方式');
   }
 }
@@ -81,38 +83,36 @@ export function normalizeAndValidateFeedingInput(
   assertFeedingType(input.feedingType);
   const note = normalizeNote(input.note);
 
-  if (input.feedingType === 'formula') {
-    return {
-      eventTimeMs: input.eventTimeMs,
-      feedingType: input.feedingType,
-      milkAmountMl: validateMilkAmount(input.milkAmountMl),
-      leftDurationMin: null,
-      rightDurationMin: null,
-      note,
-    };
+  const components: FeedingComponent[] = input.feedingType === 'mixed'
+    ? inferFeedingComponents({
+      ...input,
+      breastMilkAmountMl: input.breastMilkAmountMl ?? null,
+    })
+    : [input.feedingType];
+  if (input.feedingType === 'mixed' && components.length < 2) {
+    throw new FeedingValidationError('feedingType', '混合喂养至少需要选择两项');
   }
 
-  const leftDurationMin = validateDuration(input.leftDurationMin, 'leftDurationMin');
-  const rightDurationMin = validateDuration(input.rightDurationMin, 'rightDurationMin');
-  if (leftDurationMin === 0 && rightDurationMin === 0) {
+  const hasBreast = components.includes('breast');
+  const hasBottleBreast = components.includes('bottle_breast');
+  const hasFormula = components.includes('formula');
+  const leftDurationMin = hasBreast
+    ? validateDuration(input.leftDurationMin, 'leftDurationMin')
+    : null;
+  const rightDurationMin = hasBreast
+    ? validateDuration(input.rightDurationMin, 'rightDurationMin')
+    : null;
+  if (hasBreast && leftDurationMin === 0 && rightDurationMin === 0) {
     throw new FeedingValidationError('leftDurationMin', '左侧或右侧至少需要记录1分钟');
-  }
-
-  if (input.feedingType === 'breast') {
-    return {
-      eventTimeMs: input.eventTimeMs,
-      feedingType: input.feedingType,
-      milkAmountMl: null,
-      leftDurationMin,
-      rightDurationMin,
-      note,
-    };
   }
 
   return {
     eventTimeMs: input.eventTimeMs,
     feedingType: input.feedingType,
-    milkAmountMl: validateMilkAmount(input.milkAmountMl),
+    milkAmountMl: hasFormula ? validateAmount(input.milkAmountMl, 'milkAmountMl', '奶粉量') : null,
+    breastMilkAmountMl: hasBottleBreast
+      ? validateAmount(input.breastMilkAmountMl, 'breastMilkAmountMl', '瓶喂母乳量')
+      : null,
     leftDurationMin,
     rightDurationMin,
     note,
@@ -124,6 +124,7 @@ export function serializeFeedingCreatePayload(input: NormalizedFeedingInput) {
     eventTimeMs: input.eventTimeMs,
     feedingType: input.feedingType,
     milkAmountMl: input.milkAmountMl,
+    breastMilkAmountMl: input.breastMilkAmountMl,
     leftDurationMin: input.leftDurationMin,
     rightDurationMin: input.rightDurationMin,
     note: input.note,

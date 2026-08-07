@@ -22,6 +22,7 @@ import {
 import {
   reconcileFeedingReminderOnStartup,
   subscribeToFeedingReminderForeground,
+  type FeedingReminderInitializationReason,
 } from '@/application/reminders/feeding-reminder-lifecycle';
 import type { BabyProfile } from '@/domain/baby/baby';
 import type { BabyProfileInput } from '@/domain/baby/baby-profile';
@@ -91,14 +92,24 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [restoreService, setRestoreService] = useState<RestoreService | null>(null);
   const [themeMode, setThemeMode] = useState<BackupThemeMode>('system');
   const [themeService, setThemeService] = useState<ThemeService | null>(null);
-  const [initializationAttempt, setInitializationAttempt] = useState(0);
+  const [initializationRequest, setInitializationRequest] = useState<{
+    attempt: number;
+    reminderReason: FeedingReminderInitializationReason;
+  }>({ attempt: 0, reminderReason: 'cold-start' });
   const operationCoordinator = useMemo(() => new BackupRestoreCoordinator(), []);
 
-  const retryInitialization = useCallback(() => {
+  const requestInitialization = useCallback((reminderReason: FeedingReminderInitializationReason) => {
     setStatus('loading');
     setErrorMessage(null);
-    setInitializationAttempt((attempt) => attempt + 1);
+    setInitializationRequest((request) => ({
+      attempt: request.attempt + 1,
+      reminderReason,
+    }));
   }, []);
+
+  const retryInitialization = useCallback(() => {
+    requestInitialization('retry');
+  }, [requestInitialization]);
 
   useEffect(() => {
     let active = true;
@@ -142,7 +153,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           operationCoordinator,
         });
         try {
-          await reconcileFeedingReminderOnStartup(initializedFeedingReminderService);
+          await reconcileFeedingReminderOnStartup(
+            initializedFeedingReminderService,
+            initializationRequest.reminderReason,
+          );
         } catch (error) {
           console.warn('[reminders] startup reconciliation failed', error);
         }
@@ -184,7 +198,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           documentPicker: new ExpoBackupDocumentPickerGateway(),
           coordinator: operationCoordinator,
           reminderSync: () => initializedFeedingReminderService.syncFeedingReminder({ forceReschedule: true }),
-          refreshAppState: async () => retryInitialization(),
+          refreshAppState: async () => requestInitialization('restore-refresh'),
           now: Date.now,
           createId: Crypto.randomUUID,
         });
@@ -264,7 +278,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
-  }, [initializationAttempt, operationCoordinator, retryInitialization]);
+  }, [initializationRequest.attempt, initializationRequest.reminderReason, operationCoordinator, requestInitialization]);
 
   useEffect(() => {
     if (!feedingReminderService) return undefined;

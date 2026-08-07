@@ -12,6 +12,7 @@ export const CSV_EXPORT_COLUMNS = [
   'pee_color', 'pee_color_label', 'pee_amount', 'pee_amount_label', 'sleep_status',
   'sleep_status_label', 'sleep_start_time', 'sleep_end_time', 'sleep_duration_minutes',
   'other_title', 'note', 'created_at', 'updated_at',
+  'breast_milk_amount_ml',
 ] as const;
 
 type ExportRecordBase = {
@@ -28,6 +29,7 @@ export type ExportRecord =
       type: 'feeding';
       feedingType: FeedingType;
       milkAmountMl: number | null;
+      breastMilkAmountMl: number | null;
       leftDurationMin: number | null;
       rightDurationMin: number | null;
     })
@@ -60,7 +62,12 @@ export type ExportSnapshot = {
 const recordTypeLabels = {
   feeding: '喝奶', poop: '大便', pee: '小便', sleep: '睡眠', other: '其他',
 } as const;
-const feedingTypeLabels = { formula: '奶粉', breast: '母乳', mixed: '混合' } as const;
+const feedingTypeLabels = {
+  formula: '奶粉',
+  breast: '亲喂母乳',
+  bottle_breast: '瓶喂母乳',
+  mixed: '混合',
+} as const;
 const poopColorLabels = {
   yellow: '黄色', green: '绿色', brown: '棕色', black: '黑色', red: '红色', other: '其他',
 } as const;
@@ -133,6 +140,7 @@ function rowFor(record: ExportRecord, snapshot: ExportSnapshot) {
 
   values.push(record.type === 'other' ? record.title : null, record.note,
     formatLocalDateTime(record.createdAtMs), formatLocalDateTime(record.updatedAtMs));
+  values.push(record.type === 'feeding' ? record.breastMilkAmountMl : null);
 
   return values.map((value, index) => encodeCell(value, USER_CONTROLLED_TEXT_COLUMNS.has(index))).join(',');
 }

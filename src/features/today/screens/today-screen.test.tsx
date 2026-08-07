@@ -16,7 +16,12 @@ jest.mock('expo-router', () => {
   };
 });
 
-function appState() {
+function appState(feedingSummary = {
+  feedingCount: 0,
+  formulaTotalMl: 0,
+  breastMilkTotalMl: 0,
+  measurableTotalMl: 0,
+}) {
   const nowMs = new Date(2026, 6, 12, 12, 0).getTime();
   return {
     babyProfile: {
@@ -29,7 +34,7 @@ function appState() {
     feedingService: { getDashboard: jest.fn(async () => ({
       latest: null,
       timeline: [],
-      summary: { feedingCount: 0, formulaTotalMl: 0 },
+      summary: feedingSummary,
       refreshedAtMs: nowMs,
     })) },
     poopService: { getHistory: jest.fn(async () => []), getDailyCount: jest.fn(async () => 0) },
@@ -50,4 +55,28 @@ test('today empty state and quick actions remain understandable with large text'
   expect(view.getByLabelText('记录小便').props.accessibilityHint).toBe('新建小便记录');
   expect(view.getByLabelText('开始睡眠').props.accessibilityHint).toBe('开始一条睡眠记录');
   expect(view.getByLabelText('记录其他事件').props.accessibilityHint).toBe('新建其他记录');
+});
+
+test('today overview preserves feeding summary card order and field mapping', async () => {
+  jest.mocked(useAppState).mockReturnValue(appState({
+    feedingCount: 6,
+    formulaTotalMl: 120,
+    breastMilkTotalMl: 180,
+    measurableTotalMl: 777,
+  }) as never);
+  const view = await render(<TodayScreen />);
+
+  await waitFor(() => expect(view.getByText('6次')).toBeTruthy());
+  const feedingMetricCards = view.getByText('喝奶次数').parent?.parent?.children.slice(0, 4);
+
+  expect(feedingMetricCards).toEqual([
+    view.getByText('喝奶次数').parent,
+    view.getByText('可计量合计').parent,
+    view.getByText('瓶喂母乳').parent,
+    view.getByText('奶粉').parent,
+  ]);
+  expect(view.getByText('6次').parent).toBe(view.getByText('喝奶次数').parent);
+  expect(view.getByText('777ml').parent).toBe(view.getByText('可计量合计').parent);
+  expect(view.getByText('180ml').parent).toBe(view.getByText('瓶喂母乳').parent);
+  expect(view.getByText('120ml').parent).toBe(view.getByText('奶粉').parent);
 });

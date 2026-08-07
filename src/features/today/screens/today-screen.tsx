@@ -229,21 +229,33 @@ export function TodayScreen() {
         </ThemedText>
         <View style={styles.metrics}>
           <SectionCard style={styles.metric}>
-            <ThemedText type="small" themeColor="textSecondary">喝奶</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">喝奶次数</ThemedText>
             <ThemedText style={styles.metricValue} selectable>
               {dashboard?.feeding.summary.feedingCount ?? 0}次
             </ThemedText>
           </SectionCard>
           <SectionCard style={styles.metric}>
-            <ThemedText type="small" themeColor="textSecondary">睡眠</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">可计量合计</ThemedText>
             <ThemedText style={styles.metricValue} selectable>
-              {formatSleepDuration(dashboard?.sleep.completedTotalMs ?? 0)}
+              {dashboard?.feeding.summary.measurableTotalMl ?? 0}ml
+            </ThemedText>
+          </SectionCard>
+          <SectionCard style={styles.metric}>
+            <ThemedText type="small" themeColor="textSecondary">瓶喂母乳</ThemedText>
+            <ThemedText style={styles.metricValue} selectable>
+              {dashboard?.feeding.summary.breastMilkTotalMl ?? 0}ml
             </ThemedText>
           </SectionCard>
           <SectionCard style={styles.metric}>
             <ThemedText type="small" themeColor="textSecondary">奶粉</ThemedText>
             <ThemedText style={styles.metricValue} selectable>
               {dashboard?.feeding.summary.formulaTotalMl ?? 0}ml
+            </ThemedText>
+          </SectionCard>
+          <SectionCard style={styles.metric}>
+            <ThemedText type="small" themeColor="textSecondary">睡眠</ThemedText>
+            <ThemedText style={styles.metricValue} selectable>
+              {formatSleepDuration(dashboard?.sleep.completedTotalMs ?? 0)}
             </ThemedText>
           </SectionCard>
           <SectionCard style={styles.metric}>

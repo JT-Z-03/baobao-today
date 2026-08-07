@@ -14,13 +14,14 @@ const base: FeedingRecord = {
   updatedAtMs: 1,
   feedingType: 'formula',
   milkAmountMl: 90,
+  breastMilkAmountMl: null,
   leftDurationMin: null,
   rightDurationMin: null,
   note: null,
 };
 
 describe('feeding display formatting', () => {
-  test('formats formula, breast, and mixed details', () => {
+  test('formats formula and direct breast details', () => {
     expect(formatFeedingDetails(base)).toBe('奶粉 90ml');
     expect(
       formatFeedingDetails({
@@ -30,16 +31,31 @@ describe('feeding display formatting', () => {
         leftDurationMin: 12,
         rightDurationMin: 8,
       }),
-    ).toBe('母乳 左12分钟 / 右8分钟');
+    ).toBe('亲喂母乳 左12分钟 / 右8分钟');
+  });
+
+  test('formats bottled breast milk details', () => {
+    expect(
+      formatFeedingDetails({
+        ...base,
+        feedingType: 'bottle_breast',
+        milkAmountMl: null,
+        breastMilkAmountMl: 120,
+      }),
+    ).toBe('瓶喂母乳 120ml');
+  });
+
+  test('formats mixed details in breast, bottled breast, formula order', () => {
     expect(
       formatFeedingDetails({
         ...base,
         feedingType: 'mixed',
-        milkAmountMl: 60,
+        milkAmountMl: 40,
+        breastMilkAmountMl: 80,
         leftDurationMin: 10,
-        rightDurationMin: 0,
+        rightDurationMin: 5,
       }),
-    ).toBe('混合 左10分钟 / 奶粉60ml');
+    ).toBe('混合 亲喂左10分钟 / 右5分钟 · 瓶喂母乳80ml · 奶粉40ml');
   });
 
   test('formats elapsed time without querying the database', () => {

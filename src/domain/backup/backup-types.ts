@@ -1,5 +1,8 @@
 export type BackupRecordType = 'feeding' | 'poop' | 'pee' | 'sleep' | 'other';
 export type BackupThemeMode = 'system' | 'light' | 'dark';
+export type BackupFormatVersion = 1 | 2;
+export type BackupFeedingTypeV1 = 'breast' | 'formula' | 'mixed';
+export type BackupFeedingTypeV2 = BackupFeedingTypeV1 | 'bottle_breast';
 
 export interface BackupBaby {
   id: string;
@@ -20,8 +23,9 @@ export interface BackupRecord {
   created_at_ms: number;
   updated_at_ms: number;
   note: string | null;
-  feeding_type: 'breast' | 'formula' | 'mixed' | null;
+  feeding_type: BackupFeedingTypeV2 | null;
   milk_amount_ml: number | null;
+  breast_milk_amount_ml: number | null;
   left_duration_min: number | null;
   right_duration_min: number | null;
   poop_color: 'yellow' | 'green' | 'brown' | 'black' | 'red' | 'other' | null;
@@ -36,6 +40,10 @@ export interface BackupRecord {
   sleep_status: 'sleeping' | 'completed' | null;
   other_title: string | null;
 }
+
+export type BackupRecordV1 = Omit<BackupRecord, 'feeding_type' | 'breast_milk_amount_ml'> & {
+  feeding_type: BackupFeedingTypeV1 | null;
+};
 
 export interface BackupSettings {
   theme_mode: BackupThemeMode;
@@ -63,9 +71,9 @@ export interface BackupRecordCounts {
   other: number;
 }
 
-export interface BackupManifest {
+export interface BackupManifestV2 {
   format: 'baobao-today-backup';
-  formatVersion: 1;
+  formatVersion: 2;
   backupId: string;
   createdAtMs: number;
   appVersion: string;
@@ -79,3 +87,6 @@ export interface BackupManifest {
   photoTotalBytes: number;
   entries: BackupIntegrityEntry[];
 }
+
+export type BackupManifestV1 = Omit<BackupManifestV2, 'formatVersion'> & { formatVersion: 1 };
+export type BackupManifest = BackupManifestV1 | BackupManifestV2;

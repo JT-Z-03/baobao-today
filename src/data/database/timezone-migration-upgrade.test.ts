@@ -72,7 +72,7 @@ describe('historical local record date migration v8', () => {
   test('upgrades v7 without rebuilding records or changing any business value', async () => {
     const sqlite = createV7Fixture();
     const before = snapshotRecords(sqlite);
-    await runMigrations(adapter(sqlite));
+    await runMigrations(adapter(sqlite), { targetVersion: 8 });
 
     expect(sqlite.prepare('PRAGMA user_version').get()).toEqual({ user_version: 8 });
     expect(snapshotRecords(sqlite)).toEqual(before);
@@ -88,7 +88,7 @@ describe('historical local record date migration v8', () => {
 
   test('accepts a historical sleep date that differs from the current timezone calculation', async () => {
     const sqlite = createV7Fixture();
-    await runMigrations(adapter(sqlite));
+    await runMigrations(adapter(sqlite), { targetVersion: 8 });
     insertHistoricalSleep(sqlite);
     expect(sqlite.prepare(`SELECT record_date, event_time_ms, sort_time_ms, sleep_start_ms
       FROM records WHERE id='historical-sleep'`).get()).toEqual({
@@ -105,14 +105,14 @@ describe('historical local record date migration v8', () => {
     ['sort differs from start', `'bad', 'bad-request-5', '${'e'.repeat(64)}', 'sleep', 10, '2026-01-01', 9, 1, 1, 10, 11, 'completed'`],
   ])('still rejects %s', async (_label, values) => {
     const sqlite = createV7Fixture();
-    await runMigrations(adapter(sqlite));
+    await runMigrations(adapter(sqlite), { targetVersion: 8 });
     expect(() => insertHistoricalSleep(sqlite, values)).toThrow(/invalid sleep fields/i);
     sqlite.close();
   });
 
   test('continues to enforce one sleeping record and field isolation', async () => {
     const sqlite = createV7Fixture();
-    await runMigrations(adapter(sqlite));
+    await runMigrations(adapter(sqlite), { targetVersion: 8 });
     const base = `id, client_request_id, create_payload_hash, type, event_time_ms, record_date,
       sort_time_ms, created_at_ms, updated_at_ms, sleep_start_ms, sleep_end_ms, sleep_status`;
     sqlite.exec(`INSERT INTO records (${base}) VALUES ('active-1','active-request-1','${'6'.repeat(64)}',
@@ -132,7 +132,8 @@ describe('historical local record date migration v8', () => {
       const before = snapshotRecords(sqlite);
       const triggerBefore = sqlite.prepare(`SELECT name, sql FROM sqlite_schema
         WHERE name LIKE 'records_sleep_%_valid' ORDER BY name`).all();
-      await expect(runMigrations(adapter(sqlite), { failurePoint: failurePoint as never })).rejects.toThrow(/Injected/);
+      await expect(runMigrations(adapter(sqlite), { failurePoint: failurePoint as never, targetVersion: 8 }))
+        .rejects.toThrow(/Injected/);
       expect(sqlite.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
       expect(snapshotRecords(sqlite)).toEqual(before);
       expect(sqlite.prepare(`SELECT name, sql FROM sqlite_schema

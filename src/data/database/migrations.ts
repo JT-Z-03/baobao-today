@@ -10,6 +10,10 @@ import {
   RECORDS_V8_CREATE_SLEEP_TRIGGERS_SQL,
   RECORDS_V8_DROP_SLEEP_TRIGGERS_SQL,
   RECORDS_V8_SLEEP_TRIGGERS_SQL,
+  RECORDS_V9_COPY_SQL,
+  RECORDS_V9_FINAL_OBJECTS_SQL,
+  RECORDS_V9_REBUILD_SQL,
+  RECORDS_V9_TABLE_SQL,
 } from './records-schema.ts';
 
 type SQLiteValue = string | number | null;
@@ -426,6 +430,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 8,
     sql: RECORDS_V8_SLEEP_TRIGGERS_SQL,
   },
+  {
+    version: 9,
+    sql: RECORDS_V9_REBUILD_SQL,
+  },
 ] as const;
 
 export type MigrationFailurePoint =
@@ -433,7 +441,11 @@ export type MigrationFailurePoint =
   | 'after-drop'
   | 'after-schema-objects'
   | 'after-v8-trigger-drop'
-  | 'after-v8-trigger-create';
+  | 'after-v8-trigger-create'
+  | 'after-v9-copy'
+  | 'after-v9-drop'
+  | 'after-v9-schema-objects'
+  | 'after-v9-version';
 
 type MigrationOptions = {
   failurePoint?: MigrationFailurePoint;
@@ -613,6 +625,85 @@ async function runMigrationV8(
   }
 }
 
+async function runMigrationV9(
+  transaction: MigrationTransaction,
+  options: MigrationOptions,
+) {
+  const version = await transaction.getFirstAsync<VersionRow>('PRAGMA user_version');
+  if (version?.user_version !== 8) {
+    throw new Error(`feeding migration v9 requires user_version 8, received ${version?.user_version ?? 'unknown'}`);
+  }
+
+  const foreignKeyReferences = await transaction.getAllAsync<{ name: string }>(`
+    SELECT name FROM sqlite_schema
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+      AND lower(COALESCE(sql, '')) LIKE '%references records%'
+  `);
+  if (foreignKeyReferences.length) {
+    throw new Error(`feeding migration v9 does not support existing foreign-key references: ${foreignKeyReferences.map((row) => row.name).join(', ')}`);
+  }
+
+  const oldObjects = await transaction.getAllAsync<SchemaObjectRow>(`
+    SELECT name, type, sql FROM sqlite_schema
+    WHERE tbl_name='records' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+    ORDER BY name
+  `);
+  const expectedOldNames = new Set<string>([...RECORDS_FINAL_OBJECT_NAMES, ...RECORDS_V6_OBJECT_NAMES]);
+  if (oldObjects.length !== expectedOldNames.size
+    || oldObjects.some((item) => !expectedOldNames.has(item.name))) {
+    throw new Error('feeding migration v9 encountered an unexpected records schema object set');
+  }
+
+  await transaction.execAsync(RECORDS_V9_TABLE_SQL);
+  await transaction.execAsync(RECORDS_V9_COPY_SQL);
+  await requireZero(transaction, `
+    SELECT ABS(
+      (SELECT COUNT(*) FROM records) - (SELECT COUNT(*) FROM records_v9)
+    ) AS count
+  `, 'feeding migration v9 record counts differ');
+  await requireZero(transaction, `
+    SELECT COUNT(*) AS count FROM (
+      SELECT ${RECORD_COLUMNS_SQL} FROM records
+      EXCEPT
+      SELECT ${RECORD_COLUMNS_SQL} FROM records_v9
+    )
+  `, 'feeding migration v9 copied values differ');
+  await requireZero(transaction, `
+    SELECT COUNT(*) AS count FROM (
+      SELECT id FROM records EXCEPT SELECT id FROM records_v9
+    )
+  `, 'feeding migration v9 record ID sets differ');
+  await requireZero(transaction, `
+    SELECT COUNT(*) AS count FROM (
+      SELECT type, COUNT(*) AS amount FROM records GROUP BY type
+      EXCEPT
+      SELECT type, COUNT(*) AS amount FROM records_v9 GROUP BY type
+    )
+  `, 'feeding migration v9 type counts differ');
+  await requireZero(transaction, `SELECT COUNT(*) AS count FROM records_v9
+    WHERE breast_milk_amount_ml IS NOT NULL`, 'feeding migration v9 populated new values');
+  injectedFailure('after-v9-copy', options);
+
+  await transaction.execAsync('DROP TABLE records;');
+  injectedFailure('after-v9-drop', options);
+  await transaction.execAsync('ALTER TABLE records_v9 RENAME TO records;');
+  await transaction.execAsync(RECORDS_V9_FINAL_OBJECTS_SQL);
+  injectedFailure('after-v9-schema-objects', options);
+
+  const objects = await transaction.getAllAsync<SchemaObjectRow>(`
+    SELECT name, type, sql FROM sqlite_schema
+    WHERE tbl_name='records' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+  `);
+  const names = new Set(objects.map((item) => item.name));
+  for (const required of [...RECORDS_FINAL_OBJECT_NAMES, ...RECORDS_V6_OBJECT_NAMES]) {
+    if (!names.has(required)) throw new Error(`feeding migration v9 missing schema object ${required}`);
+  }
+  const foreignKeyProblems = await transaction.getAllAsync<Record<string, SQLiteValue>>('PRAGMA foreign_key_check');
+  if (foreignKeyProblems.length) throw new Error('feeding migration v9 foreign_key_check failed');
+  const integrity = await transaction.getFirstAsync<{ integrity_check: string }>('PRAGMA integrity_check');
+  if (integrity?.integrity_check !== 'ok') throw new Error('feeding migration v9 integrity_check failed');
+}
+
 export async function runMigrations(database: MigrationDatabase, options: MigrationOptions = {}) {
   const row = await database.getFirstAsync<VersionRow>('PRAGMA user_version');
   const currentVersion = row?.user_version ?? 0;
@@ -624,6 +715,7 @@ export async function runMigrations(database: MigrationDatabase, options: Migrat
     await database.withExclusiveTransactionAsync(async (transaction) => {
       if (migration.version === 5) await runMigrationV5(transaction, options);
       else if (migration.version === 8) await runMigrationV8(transaction, options);
+      else if (migration.version === 9) await runMigrationV9(transaction, options);
       else await transaction.execAsync(migration.sql);
       await transaction.execAsync(`PRAGMA user_version = ${migration.version}`);
       if (migration.version === 5) {
@@ -633,6 +725,11 @@ export async function runMigrations(database: MigrationDatabase, options: Migrat
       if (migration.version === 8) {
         const committedVersion = await transaction.getFirstAsync<VersionRow>('PRAGMA user_version');
         if (committedVersion?.user_version !== 8) throw new Error('timezone migration v8 could not set user_version');
+      }
+      if (migration.version === 9) {
+        const committedVersion = await transaction.getFirstAsync<VersionRow>('PRAGMA user_version');
+        if (committedVersion?.user_version !== 9) throw new Error('feeding migration v9 could not set user_version');
+        injectedFailure('after-v9-version', options);
       }
     });
   }

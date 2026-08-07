@@ -99,7 +99,7 @@ export function createBackupValidationService(dependencies: Dependencies) {
         baby: parseJson(babyText, 'baby.json'),
         records: parseJson(recordsText, 'records.json'),
         settings: parseJson(settingsText, 'settings.json'),
-      });
+      }, manifest.formatVersion);
       const counts = countBackupRecords(data.records);
       if (manifest.babyId !== data.baby.id || !sameCounts(counts, manifest.recordCounts)
         || manifest.totalRecordCount !== data.records.length) {

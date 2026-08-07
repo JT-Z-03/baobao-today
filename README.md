@@ -10,14 +10,14 @@ Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼�
 
 - Current source version: Android 1.0.1 / versionCode 4
 - API 36 edge-to-edge safe-area fix included
-- Android source and UI flows validated through automated tests and an API 36 emulator
+- Android source and UI flows validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
 - iOS has not been built or tested
 - No APK/AAB is published in this repository
 
 ## 功能
 
 - 宝宝基础资料：昵称和出生日期。
-- 五类日常记录：喝奶、大便、小便、睡眠和其他事项。
+- 五类日常记录：喝奶、大便、小便、睡眠和其他事项；喝奶支持奶粉、亲喂母乳、瓶喂母乳和混合。
 - 今天页与历史页：按本地日期查看统一时间线。
 - 大便照片：拍照或从相册选择后保存在应用管理的本地目录。
 - 喝奶提醒：由 Android 本地通知安排，不使用推送服务。
@@ -55,7 +55,7 @@ Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼�
 
 ## 本地数据架构
 
-SQLite 是业务数据的事实来源，当前 `user_version=8`。代码按职责分为：
+SQLite 是业务数据的事实来源，当前 `user_version=9`。完整备份新建时写入 `formatVersion=2`，可恢复历史 `formatVersion=1` 和当前 `formatVersion=2`；CSV 固定 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`。代码按职责分为：
 
 - `src/domain`：业务类型、校验、日期、统计和导出/备份格式规则。
 - `src/application`：用例服务，协调数据仓库、照片、通知和文件能力。
@@ -156,8 +156,8 @@ npx expo export --platform android --output-dir dist
 
 ## 版权与许可
 
-Copyright © 2026 ZestJT（钟锦涛）. All rights reserved.
+Copyright © 2026 ZestJT（钟锦涛）。
 
-本仓库源码公开供查看。除适用法律或另行书面授权外，不授予复制、修改、分发、再许可或商业使用权利。
+本项目原创代码和文档采用 [MIT License](LICENSE)。MIT 允许使用、复制、修改、分发、再许可和商业使用，但必须保留版权与许可声明，且软件按“原样”提供、不附带担保。
 
-根目录未提供开源 `LICENSE`。第三方组件和素材仍分别适用其原始许可证，见 [第三方声明](THIRD_PARTY_NOTICES.md)。在 GitHub 上公开查看或 fork 还会受 GitHub 服务条款约束；这不构成维护者授予额外的软件许可。
+第三方组件、字体和素材仍分别适用其原始许可证，见 [第三方声明](THIRD_PARTY_NOTICES.md)；项目名称、图标和品牌资产不因代码采用 MIT 而自动获得商标授权。

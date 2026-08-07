@@ -1,6 +1,5 @@
 import {
   BACKUP_FORMAT,
-  BACKUP_FORMAT_VERSION,
   BackupManifestError,
   buildBackupManifest,
   parseBackupManifest,
@@ -28,20 +27,28 @@ function validManifest() {
 }
 
 describe('backup manifest format', () => {
-  test('builds deterministic format v1 counts and integrity metadata', () => {
+  test('builds format version two and still parses version one', () => {
     expect(validManifest()).toEqual(expect.objectContaining({
       format: BACKUP_FORMAT,
-      formatVersion: BACKUP_FORMAT_VERSION,
+      formatVersion: 2,
       totalRecordCount: 5,
       photoCount: 1,
       photoTotalBytes: 40,
     }));
+    expect(parseBackupManifest({ ...validManifest(), formatVersion: 1 })).toMatchObject({ formatVersion: 1 });
+    expect(parseBackupManifest({ ...validManifest(), formatVersion: 2 })).toMatchObject({ formatVersion: 2 });
     expect(parseBackupManifest(validManifest())).toEqual(validManifest());
   });
 
   test('rejects a backup from a newer format with a distinct code', () => {
-    expect(() => parseBackupManifest({ ...validManifest(), formatVersion: 2 })).toThrow(
+    expect(() => parseBackupManifest({ ...validManifest(), formatVersion: 3 })).toThrow(
       expect.objectContaining({ code: 'unsupported-newer-version' }),
+    );
+  });
+
+  test.each([0, -1, 1.5, '2', null])('rejects unsupported format version %#', (formatVersion) => {
+    expect(() => parseBackupManifest({ ...validManifest(), formatVersion })).toThrow(
+      expect.objectContaining({ code: 'unsupported-version' }),
     );
   });
 

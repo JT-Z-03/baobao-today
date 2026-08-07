@@ -64,6 +64,30 @@ try {
     throw new Error('Other title semantic triggers were not enforced');
   }
 
+  database.prepare(`
+    INSERT INTO records (
+      id, client_request_id, create_payload_hash, type,
+      event_time_ms, record_date, sort_time_ms,
+      created_at_ms, updated_at_ms, feeding_type, breast_milk_amount_ml
+    ) VALUES (?, ?, ?, 'feeding', ?, '2000-01-01', ?, ?, ?, 'bottle_breast', 80)
+  `).run('host-bottle-valid', 'host-bottle-valid-request', '4'.repeat(64), 5, 5, 5, 5);
+
+  let bottledBreastMilkConstraintVerified = false;
+  try {
+    database.prepare(`
+      INSERT INTO records (
+        id, client_request_id, create_payload_hash, type,
+        event_time_ms, record_date, sort_time_ms,
+        created_at_ms, updated_at_ms, feeding_type, breast_milk_amount_ml
+      ) VALUES (?, ?, ?, 'feeding', ?, '2000-01-01', ?, ?, ?, 'mixed', 80)
+    `).run('host-mixed-invalid', 'host-mixed-invalid-request', '5'.repeat(64), 6, 6, 6, 6);
+  } catch (error) {
+    bottledBreastMilkConstraintVerified = /invalid feeding fields/i.test(String(error));
+  }
+  if (!bottledBreastMilkConstraintVerified) {
+    throw new Error('Bottled breast milk feeding constraints were not enforced');
+  }
+
   // Simulate re-running the initialization path against an existing business sleep.
   for (const migration of MIGRATIONS) {
     const { user_version: userVersion } = database.prepare('PRAGMA user_version').get();
@@ -92,6 +116,7 @@ try {
   console.log('Sleeping partial unique index: passed');
   console.log('Pee semantic triggers: passed');
   console.log('Other title semantic triggers: passed');
+  console.log('Bottled breast milk feeding constraints: passed');
   console.log('Existing sleeping record reinitialization: passed');
   console.log(`Final user_version: ${database.prepare('PRAGMA user_version').get().user_version}`);
 } finally {

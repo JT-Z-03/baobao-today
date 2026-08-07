@@ -17,7 +17,7 @@ function data(): BackupData {
       {
         id: 'historical-sleep', client_request_id: 'historical-request', create_payload_hash: 'a'.repeat(64),
         type: 'sleep', event_time_ms: 18_000_000, record_date: '1969-12-31', sort_time_ms: 18_000_000,
-        created_at_ms: 30, updated_at_ms: 40, note: null, feeding_type: null, milk_amount_ml: null,
+        created_at_ms: 30, updated_at_ms: 40, note: null, feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null,
         left_duration_min: null, right_duration_min: null, poop_color: null, poop_texture: null, poop_amount: null,
         photo_backup_entry: null, photo_sha256: null, pee_color: null, pee_amount: null,
         sleep_start_ms: 18_000_000, sleep_end_ms: 21_600_000, sleep_status: 'completed', other_title: null,
@@ -25,7 +25,7 @@ function data(): BackupData {
       {
         id: 'restored-poop', client_request_id: 'restored-poop-request', create_payload_hash: 'b'.repeat(64),
         type: 'poop', event_time_ms: 50_000, record_date: '2026-07-10', sort_time_ms: 50_000,
-        created_at_ms: 50, updated_at_ms: 60, note: '照片', feeding_type: null, milk_amount_ml: null,
+        created_at_ms: 50, updated_at_ms: 60, note: '照片', feeding_type: null, milk_amount_ml: null, breast_milk_amount_ml: null,
         left_duration_min: null, right_duration_min: null, poop_color: 'yellow', poop_texture: null, poop_amount: null,
         photo_backup_entry: 'photos/photo-1.jpg', photo_sha256: 'c'.repeat(64), pee_color: null, pee_amount: null,
         sleep_start_ms: null, sleep_end_ms: null, sleep_status: null, other_title: null,
@@ -33,6 +33,21 @@ function data(): BackupData {
     ],
     settings: { theme_mode: 'light', feeding_reminder_enabled: true, feeding_reminder_interval_minutes: 180 },
   });
+}
+
+function dataWithBottledBreastMilk(): BackupData {
+  const backup = data();
+  return {
+    ...backup,
+    records: [...backup.records, {
+      id: 'restored-bottle-breast', client_request_id: 'restored-bottle-breast-request', create_payload_hash: 'e'.repeat(64),
+      type: 'feeding', event_time_ms: 70_000, record_date: '2026-07-10', sort_time_ms: 70_000,
+      created_at_ms: 70, updated_at_ms: 80, note: null, feeding_type: 'bottle_breast', milk_amount_ml: null,
+      breast_milk_amount_ml: 80, left_duration_min: null, right_duration_min: null, poop_color: null,
+      poop_texture: null, poop_amount: null, photo_backup_entry: null, photo_sha256: null, pee_color: null,
+      pee_amount: null, sleep_start_ms: null, sleep_end_ms: null, sleep_status: null, other_title: null,
+    }],
+  };
 }
 
 function setup(failPattern?: RegExp) {
@@ -97,8 +112,20 @@ describe('SQLiteRestoreRepository trusted replacement', () => {
       feeding_reminder_scheduled_for_ms: null, feeding_reminder_source_record_id: null,
       feeding_reminder_sync_error_code: null, notification_permission_prompted: 1,
     });
-    expect(sqlite.prepare('PRAGMA user_version').get()).toEqual({ user_version: 8 });
+    expect(sqlite.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 });
     expect(sqlite.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
+    sqlite.close();
+  });
+
+  test('restores bottled breast milk amount into SQLite', async () => {
+    const { sqlite, repository } = setup();
+    await repository.replaceAll(
+      dataWithBottledBreastMilk(),
+      new Map([['photos/photo-1.jpg', 'poop-photos/restore-session-photo.jpg']]),
+      70,
+    );
+    expect(sqlite.prepare(`SELECT feeding_type, breast_milk_amount_ml FROM records
+      WHERE id='restored-bottle-breast'`).get()).toEqual({ feeding_type: 'bottle_breast', breast_milk_amount_ml: 80 });
     sqlite.close();
   });
 

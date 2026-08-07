@@ -28,9 +28,9 @@ flowchart LR
 
 ## SQLite
 
-当前 schema 版本为 `user_version=8`。数据库包含宝宝资料、统一记录、主题设置和喝奶提醒设置。五类记录为：
+当前 schema 版本为 `user_version=9`。数据库包含宝宝资料、统一记录、主题设置和喝奶提醒设置。五类记录为：
 
-- `feeding`：母乳、奶粉或混合喂养及相应数量/时长。
+- `feeding`：奶粉、亲喂母乳、瓶喂母乳或混合喂养及相应数量/时长。
 - `poop`：颜色、性状、量和可选照片引用。
 - `pee`：颜色和量。
 - `sleep`：开始、结束和进行中状态。
@@ -50,7 +50,7 @@ flowchart LR
 
 ## 导出与恢复
 
-CSV 服务从同一 SQLite 快照生成稳定列顺序的表格。ZIP 备份服务从 SQLite 快照和受管照片生成完整归档；恢复前先在暂存区校验结构、大小、哈希和业务约束，然后执行替换式恢复。详情见 [数据导出与备份](DATA-PORTABILITY.md)。
+CSV 服务从同一 SQLite 快照生成固定 33 列的表格，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`。ZIP 备份服务从 SQLite 快照和受管照片生成完整归档，新建备份写入 `formatVersion=2`，恢复支持历史 `formatVersion=1` 和当前 `formatVersion=2`；恢复前先在暂存区校验结构、大小、哈希和业务约束，然后执行替换式恢复。详情见 [数据导出与备份](DATA-PORTABILITY.md)。
 
 ## 主题与 UI
 

@@ -27,6 +27,36 @@ export const RECORD_COLUMNS = [
 
 export const RECORD_COLUMNS_SQL = RECORD_COLUMNS.join(', ');
 
+export const RECORDS_V9_COLUMNS = [
+  'id',
+  'client_request_id',
+  'create_payload_hash',
+  'type',
+  'event_time_ms',
+  'record_date',
+  'sort_time_ms',
+  'created_at_ms',
+  'updated_at_ms',
+  'note',
+  'feeding_type',
+  'milk_amount_ml',
+  'breast_milk_amount_ml',
+  'left_duration_min',
+  'right_duration_min',
+  'poop_color',
+  'poop_texture',
+  'poop_amount',
+  'photo_uri',
+  'pee_color',
+  'pee_amount',
+  'sleep_start_ms',
+  'sleep_end_ms',
+  'sleep_status',
+  'other_title',
+] as const;
+
+export const RECORDS_V9_COLUMNS_SQL = RECORDS_V9_COLUMNS.join(', ');
+
 export const RECORDS_V5_TABLE_SQL = `
   CREATE TABLE records_v5 (
     id TEXT PRIMARY KEY NOT NULL,
@@ -111,6 +141,91 @@ export const RECORDS_V5_COPY_SQL = `
   FROM records;
 `;
 
+export const RECORDS_V9_TABLE_SQL = `
+  CREATE TABLE records_v9 (
+    id TEXT PRIMARY KEY NOT NULL,
+    client_request_id TEXT NOT NULL,
+    create_payload_hash TEXT NOT NULL CHECK (length(create_payload_hash) = 64),
+    type TEXT NOT NULL CHECK (type IN ('feeding', 'poop', 'pee', 'sleep', 'other')),
+    event_time_ms INTEGER NOT NULL,
+    record_date TEXT NOT NULL CHECK (length(record_date) = 10),
+    sort_time_ms INTEGER NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    note TEXT CHECK (note IS NULL OR length(note) <= 200),
+
+    feeding_type TEXT CHECK (feeding_type IS NULL OR feeding_type IN ('breast', 'formula', 'bottle_breast', 'mixed')),
+    milk_amount_ml INTEGER CHECK (milk_amount_ml IS NULL OR milk_amount_ml BETWEEN 0 AND 999),
+    breast_milk_amount_ml INTEGER
+      CHECK (breast_milk_amount_ml IS NULL OR breast_milk_amount_ml BETWEEN 0 AND 999),
+    left_duration_min INTEGER CHECK (left_duration_min IS NULL OR left_duration_min >= 0),
+    right_duration_min INTEGER CHECK (right_duration_min IS NULL OR right_duration_min >= 0),
+
+    poop_color TEXT CHECK (poop_color IS NULL OR poop_color IN ('yellow', 'green', 'brown', 'black', 'red', 'other')),
+    poop_texture TEXT CHECK (poop_texture IS NULL OR poop_texture IN ('watery', 'loose', 'pasty', 'formed', 'pellet')),
+    poop_amount TEXT CHECK (poop_amount IS NULL OR poop_amount IN ('small', 'medium', 'large')),
+    photo_uri TEXT,
+
+    pee_color TEXT CHECK (pee_color IS NULL OR pee_color IN ('clear', 'pale-yellow', 'yellow', 'dark-yellow')),
+    pee_amount TEXT CHECK (pee_amount IS NULL OR pee_amount IN ('small', 'medium', 'large')),
+
+    sleep_start_ms INTEGER,
+    sleep_end_ms INTEGER,
+    sleep_status TEXT CHECK (sleep_status IS NULL OR sleep_status IN ('sleeping', 'completed')),
+    other_title TEXT CHECK (other_title IS NULL OR length(trim(other_title)) BETWEEN 1 AND 50),
+
+    CHECK (
+      (type = 'sleep'
+        AND sleep_start_ms IS NOT NULL
+        AND event_time_ms = sleep_start_ms
+        AND sort_time_ms = sleep_start_ms
+        AND sleep_status IS NOT NULL
+        AND (
+          (sleep_status = 'sleeping' AND sleep_end_ms IS NULL)
+          OR (sleep_status = 'completed' AND sleep_end_ms IS NOT NULL AND sleep_end_ms > sleep_start_ms)
+        )
+      )
+      OR
+      (type <> 'sleep'
+        AND sleep_start_ms IS NULL
+        AND sleep_end_ms IS NULL
+        AND sleep_status IS NULL
+      )
+    )
+  );
+`;
+
+export const RECORDS_V9_COPY_SQL = `
+  INSERT INTO records_v9 (${RECORDS_V9_COLUMNS_SQL})
+  SELECT
+    id,
+    client_request_id,
+    create_payload_hash,
+    type,
+    event_time_ms,
+    record_date,
+    sort_time_ms,
+    created_at_ms,
+    updated_at_ms,
+    note,
+    feeding_type,
+    milk_amount_ml,
+    NULL AS breast_milk_amount_ml,
+    left_duration_min,
+    right_duration_min,
+    poop_color,
+    poop_texture,
+    poop_amount,
+    photo_uri,
+    pee_color,
+    pee_amount,
+    sleep_start_ms,
+    sleep_end_ms,
+    sleep_status,
+    other_title
+  FROM records;
+`;
+
 export const RECORDS_FINAL_INDEXES_SQL = `
   CREATE UNIQUE INDEX records_client_request_id_unique ON records(client_request_id);
   CREATE INDEX records_date_sort_index ON records(record_date, sort_time_ms DESC);
@@ -148,6 +263,46 @@ const FEEDING_INVALID = `
   OR
   (NEW.type <> 'feeding' AND (
     NEW.feeding_type IS NOT NULL OR NEW.milk_amount_ml IS NOT NULL
+    OR NEW.left_duration_min IS NOT NULL OR NEW.right_duration_min IS NOT NULL
+  ))
+`;
+
+const FEEDING_VALID_V9 = `
+  (NEW.feeding_type = 'formula'
+    AND NEW.milk_amount_ml BETWEEN 1 AND 999
+    AND NEW.breast_milk_amount_ml IS NULL
+    AND NEW.left_duration_min IS NULL AND NEW.right_duration_min IS NULL)
+  OR (NEW.feeding_type = 'breast'
+    AND NEW.milk_amount_ml IS NULL AND NEW.breast_milk_amount_ml IS NULL
+    AND NEW.left_duration_min BETWEEN 0 AND 180 AND NEW.right_duration_min BETWEEN 0 AND 180
+    AND NEW.left_duration_min + NEW.right_duration_min > 0)
+  OR (NEW.feeding_type = 'bottle_breast'
+    AND NEW.milk_amount_ml IS NULL AND NEW.breast_milk_amount_ml BETWEEN 1 AND 999
+    AND NEW.left_duration_min IS NULL AND NEW.right_duration_min IS NULL)
+  OR (NEW.feeding_type = 'mixed'
+    AND ((NEW.milk_amount_ml IS NOT NULL) + (NEW.breast_milk_amount_ml IS NOT NULL)
+      + (NEW.left_duration_min IS NOT NULL OR NEW.right_duration_min IS NOT NULL)) >= 2
+    AND (NEW.milk_amount_ml IS NULL OR NEW.milk_amount_ml BETWEEN 1 AND 999)
+    AND (NEW.breast_milk_amount_ml IS NULL OR NEW.breast_milk_amount_ml BETWEEN 1 AND 999)
+    AND ((NEW.left_duration_min IS NULL AND NEW.right_duration_min IS NULL)
+      OR (NEW.left_duration_min BETWEEN 0 AND 180 AND NEW.right_duration_min BETWEEN 0 AND 180
+        AND NEW.left_duration_min + NEW.right_duration_min > 0)))
+`;
+
+const FEEDING_INVALID_V9 = `
+  (
+    NEW.type = 'feeding' AND (
+      COALESCE((${FEEDING_VALID_V9}), 0) = 0
+      OR NEW.poop_color IS NOT NULL OR NEW.poop_texture IS NOT NULL OR NEW.poop_amount IS NOT NULL
+      OR NEW.photo_uri IS NOT NULL OR NEW.pee_color IS NOT NULL OR NEW.pee_amount IS NOT NULL
+      OR NEW.sleep_start_ms IS NOT NULL OR NEW.sleep_end_ms IS NOT NULL OR NEW.sleep_status IS NOT NULL
+      OR NEW.other_title IS NOT NULL
+    )
+  )
+  OR
+  (NEW.type <> 'feeding' AND (
+    NEW.feeding_type IS NOT NULL OR NEW.milk_amount_ml IS NOT NULL
+    OR NEW.breast_milk_amount_ml IS NOT NULL
     OR NEW.left_duration_min IS NOT NULL OR NEW.right_duration_min IS NOT NULL
   ))
 `;
@@ -268,6 +423,9 @@ export const RECORDS_FINAL_TRIGGERS_SQL = [
   SLEEP_TRIGGERS_SQL,
 ].join('\n');
 
+export const RECORDS_V9_FEEDING_TRIGGERS_SQL =
+  triggerPair('feeding', 'invalid feeding fields', FEEDING_INVALID_V9);
+
 export const RECORDS_FINAL_OBJECTS_SQL = `${RECORDS_FINAL_INDEXES_SQL}\n${RECORDS_FINAL_TRIGGERS_SQL}`;
 
 export const RECORDS_V5_REBUILD_SQL = `
@@ -319,3 +477,20 @@ export const RECORDS_V6_OBJECT_NAMES = [
   'records_other_insert_valid',
   'records_other_update_valid',
 ] as const;
+
+export const RECORDS_V9_FINAL_OBJECTS_SQL = [
+  RECORDS_FINAL_INDEXES_SQL,
+  RECORDS_V9_FEEDING_TRIGGERS_SQL,
+  triggerPair('poop', 'invalid poop fields', POOP_INVALID),
+  triggerPair('pee', 'invalid pee fields', PEE_INVALID),
+  RECORDS_V8_CREATE_SLEEP_TRIGGERS_SQL,
+  RECORDS_OTHER_TRIGGERS_SQL,
+].join('\n');
+
+export const RECORDS_V9_REBUILD_SQL = `
+  ${RECORDS_V9_TABLE_SQL}
+  ${RECORDS_V9_COPY_SQL}
+  DROP TABLE records;
+  ALTER TABLE records_v9 RENAME TO records;
+  ${RECORDS_V9_FINAL_OBJECTS_SQL}
+`;

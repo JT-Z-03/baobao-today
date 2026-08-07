@@ -1,11 +1,13 @@
 import type {
   BackupIntegrityEntry,
+  BackupFormatVersion,
   BackupManifest,
+  BackupManifestV2,
   BackupRecordCounts,
 } from './backup-types';
 
 export const BACKUP_FORMAT = 'baobao-today-backup' as const;
-export const BACKUP_FORMAT_VERSION = 1 as const;
+export const BACKUP_FORMAT_VERSION = 2 as const;
 
 export class BackupManifestError extends Error {
   constructor(
@@ -17,7 +19,7 @@ export class BackupManifestError extends Error {
   }
 }
 
-type BuildInput = Omit<BackupManifest, 'format' | 'formatVersion' | 'totalRecordCount' | 'photoCount' | 'photoTotalBytes'>;
+type BuildInput = Omit<BackupManifestV2, 'format' | 'formatVersion' | 'totalRecordCount' | 'photoCount' | 'photoTotalBytes'>;
 
 const countKeys: (keyof BackupRecordCounts)[] = ['feeding', 'poop', 'pee', 'sleep', 'other'];
 const manifestKeys = [
@@ -32,6 +34,10 @@ function error(code: string, message: string): never {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isBackupFormatVersion(value: unknown): value is BackupFormatVersion {
+  return value === 1 || value === BACKUP_FORMAT_VERSION;
 }
 
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
@@ -78,7 +84,7 @@ function parseEntries(raw: unknown): BackupIntegrityEntry[] {
   return entries;
 }
 
-export function buildBackupManifest(input: BuildInput): BackupManifest {
+export function buildBackupManifest(input: BuildInput): BackupManifestV2 {
   const totalRecordCount = countKeys.reduce((total, key) => total + input.recordCounts[key], 0);
   const photos = input.entries.filter((entry) => entry.path.startsWith('photos/'));
   return {
@@ -94,16 +100,20 @@ export function buildBackupManifest(input: BuildInput): BackupManifest {
 export function parseBackupManifest(raw: unknown): BackupManifest {
   if (!isObject(raw)) error('invalid-backup', '所选文件不是有效的《宝宝今天》备份。');
   if (raw.format !== BACKUP_FORMAT) error('invalid-backup', '所选文件不是有效的《宝宝今天》备份。');
-  if (typeof raw.formatVersion === 'number' && raw.formatVersion > BACKUP_FORMAT_VERSION) {
+  const formatVersion = raw.formatVersion;
+  if (typeof formatVersion === 'number' && Number.isInteger(formatVersion)
+    && formatVersion > BACKUP_FORMAT_VERSION) {
     error('unsupported-newer-version', '此备份由更新版本的《宝宝今天》创建，当前版本暂时无法恢复，请先升级App。');
   }
   exactKeys(raw, manifestKeys);
-  if (raw.formatVersion !== BACKUP_FORMAT_VERSION) error('unsupported-version', '备份格式版本不受支持');
+  if (!isBackupFormatVersion(formatVersion)) {
+    error('unsupported-version', '备份格式版本不受支持');
+  }
   const recordCounts = parseCounts(raw.recordCounts);
   const entries = parseEntries(raw.entries);
   const manifest: BackupManifest = {
     format: BACKUP_FORMAT,
-    formatVersion: BACKUP_FORMAT_VERSION,
+    formatVersion,
     backupId: typeof raw.backupId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(raw.backupId)
       ? raw.backupId : error('invalid-manifest', '备份ID无效'),
     createdAtMs: nonNegativeInteger(raw.createdAtMs, '备份创建时间'),
