@@ -5,6 +5,7 @@ import { useAppState } from '@/application/app-state/app-state-provider';
 import { CsvExportScreen } from './csv-export-screen';
 
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: jest.fn() }));
+jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
 
 async function setup(result: { kind: string; filename?: string; rowCount?: number } = {
   kind: 'share-sheet-closed', filename: 'baobao-today-records.csv', rowCount: 1,

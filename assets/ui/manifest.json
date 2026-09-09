@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "file": "baby-sleeping.png",
+      "width": 480,
+      "height": 320,
+      "sha256": "8db66b17bda16aa88bdcbefa2ef180390048b8b933f0160b9d3c4e2a34000292",
+      "colorMode": "full-color",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "以已确认的项目设计为参考，使用图像生成模型绘制独立睡眠角色，再本地去背景、裁边与等比缩放。"
+      }
+    },
+    {
+      "file": "baby-smile.png",
+      "width": 384,
+      "height": 384,
+      "sha256": "6c4173ddfafcfd669cfda6f9fc15746b11ad4439fb2cd156a706fbd9b6f63acd",
+      "colorMode": "full-color",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "以已确认的项目设计为参考，使用图像生成模型绘制独立微笑角色，再本地去背景、裁边与等比缩放。"
+      }
+    },
+    {
+      "file": "brand-flower.png",
+      "width": 96,
+      "height": 96,
+      "sha256": "6e408bef095fb3e40afec4f38d78c0d476fcf821bb2fd7d2e9ab1e7eccf46a0f",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "breastfeeding.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "54c2c0b2f7f5ea76a966965244d9891922397118e8760d40154db58b9d23a7d3",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "feeding.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "9fed7658929140d4a548c89ec98f71b6e50deb7bdc71571346e64f28d9ca43f3",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "happiness-note.png",
+      "width": 480,
+      "height": 200,
+      "sha256": "8049981766c792033f36d833108f8512f9578df9ad705bd8446dcf0c2a04ab99",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "使用图像生成模型绘制手写文案，再将字形转换为黑色 alpha 模板、裁边与等比缩放。"
+      }
+    },
+    {
+      "file": "milk-volume.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "e201c925dbe61be0c5c8c05cb97527d989bfbc94eb3179fc86dbf891dce8d49e",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "other.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "4569fb201e6724b7e0e38e916a19d3034ae0ef0658239dfc5d82a61806359b79",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "pee.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "9e4b84c9c9e0f9b4ffeb064e26173545d7098de12ee26760fdbedd4f06036bef",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    },
+    {
+      "file": "poop-dark.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "cad60f8dd6814a1505a30202bb572f45e3f46092b1f589181a68ffcbb7cf7f27",
+      "colorMode": "full-color",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "复用已确认大便图形的轮廓和 alpha，调整为适合深色主题的浅绿与金棕。"
+      }
+    },
+    {
+      "file": "poop-light.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "bb9e8674a5305a9b4ed1d184fa51b7584b437320b27e01dc04acdaf8320bf4a0",
+      "colorMode": "full-color",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取双色尿布，提取 alpha 并保留草绿与棕黄色。"
+      }
+    },
+    {
+      "file": "sleep.png",
+      "width": 144,
+      "height": 144,
+      "sha256": "aa81d7d8550e841d76f7f82367c4b97fc8f2fa00de6853957f7950056d2072ac",
+      "colorMode": "template",
+      "source": {
+        "reference": "docs/UI-ASSETS.md",
+        "method": "从已确认的项目生成设计中裁取图形，提取 alpha 并等比缩放为可按主题着色的黑色模板。"
+      }
+    }
+  ]
+}

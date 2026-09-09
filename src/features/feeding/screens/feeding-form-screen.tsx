@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormScreenState } from '@/components/ui/form-screen-state';
+import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
+import { toLocalDateKey } from '@/domain/date/local-date';
 import type { FeedingCreateInput } from '@/domain/feeding/feeding';
 import { FeedingForm } from '@/features/feeding/components/feeding-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -12,7 +14,8 @@ type Props = { recordId?: string };
 
 export function FeedingFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { feedingService } = useAppState();
+  const { babyProfile, feedingService } = useAppState();
+  const [todayDate] = useState(() => toLocalDateKey(Date.now()));
   const [clientRequestId] = useState(() =>
     recordId ? null : (feedingService?.createClientRequestId() ?? null),
   );
@@ -104,9 +107,10 @@ export function FeedingFormScreen({ recordId }: Props) {
   return (
     <>
       <FeedingForm
+        headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, todayDate)} 天` : undefined}
         initialInput={initialInput}
         clientRequestId={clientRequestId}
-        submitLabel={recordId ? '保存修改' : '完成'}
+        submitLabel={recordId ? '保存修改' : '保存记录'}
         onSave={handleSave}
         onDelete={handleDelete}
       />

@@ -10,9 +10,12 @@ Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼�
 
 - Current source version: Android 1.0.1 / versionCode 4
 - API 36 edge-to-edge safe-area fix included
-- Android source and UI flows validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
+- Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
+- 2026-09-09 soft-rose UI: implemented and checked on an API 36 emulator; this UI revision has not undergone a new physical-device release acceptance
 - iOS has not been built or tested
 - No APK/AAB is published in this repository
+
+本次淡桃粉更新以源码预览版发布。最新Expo Doctor为19/21，当前基础依赖有已知Hermes内存回归及版本匹配提醒；正式构建前需升级并重新验收，见 [测试说明](docs/TESTING.md)。
 
 ## 功能
 
@@ -27,21 +30,23 @@ Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼�
 
 ## 界面截图
 
-以下截图全部使用虚构的“示例宝宝”和虚构记录，不含真实家庭资料。
+淡桃粉界面使用奶白背景、柔和的主题色和统一的记录图标，支持浅色与深色。以下为 Android API 36 模拟器实际运行截图，使用虚构宝宝“小满”和虚构记录；不是设计稿，也不代表新的真机安装包验收。
 
-| 今天页（浅色） | 今天页（深色） |
+| 今天（浅色） | 今天（深色） |
 | --- | --- |
-| ![今天页浅色主题](docs/screenshots/01-today-light.png) | ![今天页深色主题](docs/screenshots/02-today-dark.png) |
+| ![今天浅色](docs/screenshots/soft-rose/01-today-light.png) | ![今天深色](docs/screenshots/soft-rose/01-today-dark.png) |
 
-| 快速记录与今日时间线 | 历史记录 |
+| 喝奶记录 | 历史记录 |
 | --- | --- |
-| ![快速记录与今日时间线](docs/screenshots/03-quick-actions.png) | ![历史记录](docs/screenshots/06-history.png) |
+| ![喝奶记录](docs/screenshots/soft-rose/02-feeding-light.png) | ![历史记录](docs/screenshots/soft-rose/03-records-light.png) |
 
-| CSV 导出 | 完整备份与恢复 |
+| 设置 | 睡眠记录 |
 | --- | --- |
-| ![CSV 导出](docs/screenshots/08-csv-export.png) | ![完整备份与恢复](docs/screenshots/09-backup-restore.png) |
+| ![设置](docs/screenshots/soft-rose/04-settings-light.png) | ![睡眠记录](docs/screenshots/soft-rose/07-sleep-light.png) |
 
-截图目录中还保留喝奶记录、进行中睡眠和设置页，供查看相应功能界面。
+[完整七页浅深色图库](docs/screenshots/soft-rose/README.md)还包括大便、小便及对应深色界面。[更新说明](docs/RELEASE-NOTES.md)记录本次变化与验证边界。
+
+`docs/screenshots` 根目录的旧截图保留为早期功能示例，其中界面样式不代表本次改版。
 
 ## 技术栈
 
@@ -117,6 +122,7 @@ npm run test:schema
 npm run typecheck
 npm run lint
 npm run test:assets
+npm run test:ui-assets
 npx expo-doctor
 npx expo config --type public
 npx expo export --platform android --output-dir dist

@@ -5,9 +5,15 @@ import { useAppState } from '@/application/app-state/app-state-provider';
 import { BackupRestoreScreen } from './backup-restore-screen';
 
 const mockReplace = jest.fn();
+const mockRouter = { replace: mockReplace };
+const mockPreventRemove = jest.fn();
 
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: jest.fn() }));
-jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace }) }));
+jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
+jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
+jest.mock('expo-router/react-navigation', () => ({
+  usePreventRemove: (prevent: boolean, callback: () => void) => mockPreventRemove(prevent, callback),
+}));
 
 const summary = {
   backupCreatedAtMs: new Date(2026, 6, 12, 12, 0).getTime(), appVersion: '1.0.0',
@@ -35,6 +41,7 @@ async function setup() {
 describe('BackupRestoreScreen', () => {
   beforeEach(() => {
     mockReplace.mockClear();
+    mockPreventRemove.mockClear();
   });
 
   test('shows privacy, replacement, CSV distinction, and undo controls', async () => {
@@ -78,5 +85,28 @@ describe('BackupRestoreScreen', () => {
     await fireEvent.press(screen.getByLabelText('撤销上次恢复'));
     await waitFor(() => expect(restoreService.prepareUndo).toHaveBeenCalled());
     expect(screen.getByLabelText('确认撤销恢复')).toBeTruthy();
+  });
+
+  test('prevents navigation during a backup and releases the guard after it finishes', async () => {
+    const { screen, resolveCreate } = await setup();
+    await fireEvent.press(screen.getByLabelText('创建完整备份'));
+    await fireEvent.press(screen.getByLabelText('继续创建'));
+    await waitFor(() => expect(mockPreventRemove.mock.lastCall[0]).toBe(true));
+    expect(screen.getByLabelText('从备份文件恢复').props.accessibilityState.disabled).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+    resolveCreate({ filename: 'backup.zip', uri: 'cache/backup.zip' });
+    await waitFor(() => expect(mockPreventRemove.mock.lastCall[0]).toBe(false));
+    expect(screen.getByLabelText('从备份文件恢复').props.accessibilityState.disabled).toBe(false);
+  });
+
+  test('canceling replacement confirmation does not restore any data', async () => {
+    const { screen, restoreService } = await setup();
+    await fireEvent.press(screen.getByLabelText('从备份文件恢复'));
+    await waitFor(() => expect(screen.getByLabelText('确认恢复')).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText('确认恢复'));
+    await fireEvent.press(screen.getByLabelText('取消'));
+    expect(restoreService.confirmPrepared).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByText('恢复预览')).toBeTruthy();
   });
 });

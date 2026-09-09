@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { usePreventRemove } from 'expo-router/react-navigation';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -6,17 +7,20 @@ import { useAppState } from '@/application/app-state/app-state-provider';
 import type { RestoreSummary as RestoreSummaryData } from '@/application/backup/backup-validation-service';
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
+import { AppIcon } from '@/components/ui/app-icon';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { SectionCard } from '@/components/ui/section-card';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Typography } from '@/constants/theme';
 import { RestoreSummary } from '@/features/backup/components/restore-summary';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
+import { useTheme } from '@/hooks/use-theme';
 
 type PreparedMode = 'restore' | 'undo';
 type Confirmation = 'create' | 'restore' | null;
 
 export function BackupRestoreScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { backupService, restoreService } = useAppState();
   const [phase, setPhase] = useState<string | null>(null);
@@ -25,8 +29,18 @@ export function BackupRestoreScreen() {
   const [preparedMode, setPreparedMode] = useState<PreparedMode>('restore');
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [undoAvailable, setUndoAvailable] = useState(false);
+  const [returnHome, setReturnHome] = useState(false);
   const busyRef = useRef(false);
   const busy = phase !== null;
+
+  usePreventRemove(busy, () => {
+    setMessage('正在处理本地数据，请完成后再返回。');
+  });
+
+  useEffect(() => {
+    // Release the native removal guard before navigating after a completed restore.
+    if (returnHome && !busy) router.replace('/today');
+  }, [busy, returnHome, router]);
 
   useEffect(() => {
     if (!restoreService) return;
@@ -87,7 +101,7 @@ export function BackupRestoreScreen() {
         ? ' 数据已恢复，但部分文件清理、提醒同步或页面刷新需要在下次启动时继续。'
         : '';
       setMessage(`恢复成功。${warning}`);
-      router.replace('/today');
+      setReturnHome(true);
     } catch (error) {
       setMessage(toSafeUiMessage(error, '恢复失败，当前数据和照片没有被部分覆盖。'));
     } finally {
@@ -106,7 +120,11 @@ export function BackupRestoreScreen() {
 
   return (
     <>
-      <ScreenContainer>
+      <ScreenContainer contentStyle={styles.content}>
+        <View style={styles.heading}>
+          <ThemedText style={styles.title} selectable>备份与恢复</ThemedText>
+          <AppIcon name="backup" color={theme.primary} size={32} />
+        </View>
         <SectionCard>
           <ThemedText type="smallBold" themeColor="danger" selectable>完整备份包含宝宝的私密数据</ThemedText>
           <ThemedText type="small" themeColor="textSecondary" selectable>
@@ -161,6 +179,9 @@ export function BackupRestoreScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: { maxWidth: 560, gap: Spacing.xxl },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  title: { ...Typography.pageTitle, flex: 1 },
   actions: { gap: Spacing.sm },
   summary: { gap: Spacing.xl },
 });

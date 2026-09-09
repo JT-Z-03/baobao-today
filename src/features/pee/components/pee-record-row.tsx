@@ -1,14 +1,15 @@
-import { TimelineRow } from '@/components/ui/timeline-row';
+import { TimelineRow, type TimelineConnector } from '@/components/ui/timeline-row';
 import type { PeeRecord } from '@/domain/pee/pee';
 import { formatEventTime } from '@/features/feeding/feeding-format';
 import { formatPeeDetails } from '@/features/pee/pee-format';
 
-type Props = { record: PeeRecord; onPress(): void };
+type Props = { connector?: TimelineConnector; record: PeeRecord; onPress(): void };
 
-export function PeeRecordRow({ record, onPress }: Props) {
+export function PeeRecordRow({ record, onPress, connector }: Props) {
   const details = formatPeeDetails(record);
   return (
     <TimelineRow
+      connector={connector}
       accessibilityLabel={`编辑小便记录 ${formatEventTime(record.eventTimeMs)}`}
       detail={details}
       hasNote={Boolean(record.note)}

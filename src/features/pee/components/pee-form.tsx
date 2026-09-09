@@ -1,11 +1,11 @@
-import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
-import { useRef, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,8 +13,9 @@ import { AppButton } from '@/components/ui/app-button';
 import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
-import { keyboardAvoidingBehavior, useFormKeyboardVerticalOffset } from '@/components/ui/keyboard-behavior';
-import { Radius, Spacing } from '@/constants/theme';
+import { FormScreen } from '@/components/ui/form-screen';
+import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
+import { Spacing } from '@/constants/theme';
 import type { PeeAmount, PeeColor, PeeCoreInput } from '@/domain/pee/pee';
 import { PEE_AMOUNT_LABELS, PEE_COLOR_LABELS } from '@/features/pee/pee-format';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -23,12 +24,11 @@ import { useTheme } from '@/hooks/use-theme';
 type Props = {
   initialInput: PeeCoreInput;
   clientRequestId: string | null;
+  headerSubtitle?: string;
   submitLabel?: string;
   onSave(input: PeeCoreInput, clientRequestId: string | null): Promise<void>;
   onDelete?: () => void;
 };
-
-type PickerMode = 'date' | 'time' | null;
 
 export function createPeeSubmissionLock() {
   let active = false;
@@ -45,42 +45,18 @@ export function createPeeSubmissionLock() {
 const amountOptions = Object.entries(PEE_AMOUNT_LABELS) as [PeeAmount, string][];
 const colorOptions = Object.entries(PEE_COLOR_LABELS) as [PeeColor, string][];
 
-function updateDatePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(
-    selected.getFullYear(), selected.getMonth(), selected.getDate(),
-    current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds(),
-  ).getTime();
-}
-
-function updateTimePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(
-    current.getFullYear(), current.getMonth(), current.getDate(),
-    selected.getHours(), selected.getMinutes(), 0, 0,
-  ).getTime();
-}
-
-function formatDate(ms: number) {
-  const date = new Date(ms);
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatTime(ms: number) {
-  const date = new Date(ms);
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-}
-
 type ChoiceGroupProps<T extends string> = {
   title: string;
   accessibilityPrefix: string;
   value: T | null;
   options: readonly [T, string][];
   onChange(value: T | null): void;
+  leading?: (value: T) => ReactNode;
+  choiceStyle?: StyleProp<ViewStyle>;
 };
 
 function ChoiceGroup<T extends string>({
-  title, accessibilityPrefix, value, options, onChange,
+  title, accessibilityPrefix, value, options, onChange, leading, choiceStyle,
 }: ChoiceGroupProps<T>) {
   return (
     <FormField label={title} optional>
@@ -92,8 +68,10 @@ function ChoiceGroup<T extends string>({
               key={option}
               accessibilityLabel={`${accessibilityPrefix} ${label}`}
               label={label}
+              leading={leading?.(option)}
               onPress={() => onChange(selected ? null : option)}
               selected={selected}
+              style={choiceStyle}
             />
           );
         })}
@@ -105,12 +83,19 @@ function ChoiceGroup<T extends string>({
 export function PeeForm({
   initialInput,
   clientRequestId,
-  submitLabel = '完成记录',
+  headerSubtitle,
+  submitLabel = '保存记录',
   onSave,
   onDelete,
 }: Props) {
   const theme = useTheme();
-  const keyboardVerticalOffset = useFormKeyboardVerticalOffset();
+  const { fontScale } = useWindowDimensions();
+  const colorSwatches: Record<PeeColor, string> = {
+    clear: theme.surface,
+    light_yellow: theme.urinePale,
+    yellow: theme.urineYellow,
+    dark_yellow: theme.urineDark,
+  };
   const submissionLock = useRef(createPeeSubmissionLock());
   const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
   const [amount, setAmount] = useState(initialInput.amount);
@@ -119,18 +104,8 @@ export function PeeForm({
   const [expanded, setExpanded] = useState(
     initialInput.amount !== null || initialInput.color !== null || initialInput.note !== null,
   );
-  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handlePickerValueChange = (_event: DateTimePickerChangeEvent, selectedDate: Date) => {
-    const mode = pickerMode;
-    if (!mode) return;
-    setEventTimeMs((current) => mode === 'date'
-      ? updateDatePart(current, selectedDate)
-      : updateTimePart(current, selectedDate));
-    setPickerMode(null);
-  };
 
   const handleSave = async () => {
     await submissionLock.current.run(async () => {
@@ -147,44 +122,29 @@ export function PeeForm({
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={keyboardAvoidingBehavior()}
-      keyboardVerticalOffset={keyboardVerticalOffset}>
-      <ScrollView
-        style={{ backgroundColor: theme.background }}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}>
-        <FormField label="记录时间">
-          <View style={styles.timeRow}>
-            <Pressable
-              accessibilityLabel="修改记录日期"
-              accessibilityRole="button"
-              onPress={() => setPickerMode('date')}
-              style={[styles.timeButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText numberOfLines={2}>{formatDate(eventTimeMs)}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="修改记录时间"
-              accessibilityRole="button"
-              onPress={() => setPickerMode('time')}
-              style={[styles.timeButton, styles.clockButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText style={styles.clockText}>{formatTime(eventTimeMs)}</ThemedText>
-            </Pressable>
-          </View>
-          {pickerMode ? (
-            <DateTimePicker
-              value={new Date(eventTimeMs)}
-              mode={pickerMode}
-              display="default"
-              is24Hour
-              maximumDate={pickerMode === 'date' ? new Date() : undefined}
-              onValueChange={handlePickerValueChange}
-              onDismiss={() => setPickerMode(null)}
-            />
-          ) : null}
-        </FormField>
+    <FormScreen
+      compact
+      title="记录小便"
+      subtitle={headerSubtitle}
+      icon="pee"
+      footer={(
+        <>
+          {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
+          <AppButton accessibilityLabel="保存小便记录" label={submitLabel} loading={saving} onPress={() => { void handleSave(); }} />
+          {onDelete ? <AppButton accessibilityLabel="删除小便记录" disabled={saving} label="删除记录" onPress={onDelete} variant="destructive-ghost" /> : null}
+        </>
+      )}>
+        <View style={styles.timeSection}>
+          <RecordDateTimeField
+            label="记录时间"
+            valueMs={eventTimeMs}
+            onChange={setEventTimeMs}
+            maximumDate={new Date()}
+            dateAccessibilityLabel="修改记录日期"
+            timeAccessibilityLabel="修改记录时间"
+          />
+          <ThemedText themeColor="textSecondary" type="small">只记时间，也可以保存</ThemedText>
+        </View>
 
         <Pressable
           accessibilityLabel={expanded ? '收起更多信息' : '展开更多信息'}
@@ -193,10 +153,12 @@ export function PeeForm({
           onPress={() => setExpanded((value) => !value)}
           style={({ pressed }) => [
             styles.moreButton,
-            { backgroundColor: theme.surface, borderColor: theme.border },
             pressed && styles.pressed,
           ]}>
-          <ThemedText type="smallBold">更多信息</ThemedText>
+          <View style={styles.moreLabel}>
+            <ThemedText type="subtitle">更多信息</ThemedText>
+            <ThemedText themeColor="textSecondary" type="small">选填</ThemedText>
+          </View>
           <ThemedText themeColor="textSecondary">{expanded ? '收起' : '展开'}</ThemedText>
         </Pressable>
 
@@ -208,6 +170,7 @@ export function PeeForm({
               value={amount}
               options={amountOptions}
               onChange={setAmount}
+              choiceStyle={[styles.amountChoice, fontScale > 1.3 && styles.wideAmountChoice]}
             />
             <ChoiceGroup<PeeColor>
               title="颜色"
@@ -215,6 +178,10 @@ export function PeeForm({
               value={color}
               options={colorOptions}
               onChange={setColor}
+              choiceStyle={styles.colorChoice}
+              leading={(option) => (
+                <View accessible={false} style={[styles.swatch, { backgroundColor: colorSwatches[option], borderColor: theme.border }, option === 'clear' && styles.clearSwatch]} />
+              )}
             />
             <FormField label="备注" optional>
               <AppTextInput
@@ -229,36 +196,20 @@ export function PeeForm({
           </View>
         ) : null}
 
-        {errorMessage ? <ThemedText themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
-        <AppButton
-          accessibilityLabel="保存小便记录"
-          label={submitLabel}
-          loading={saving}
-          onPress={() => { void handleSave(); }}
-        />
-        {onDelete ? (
-          <AppButton
-            accessibilityLabel="删除小便记录"
-            disabled={saving}
-            label="删除记录"
-            onPress={onDelete}
-            variant="destructive"
-          />
-        ) : null}
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </FormScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: 160, gap: Spacing.xl },
-  timeRow: { flexDirection: 'row', gap: Spacing.sm },
-  timeButton: { flex: 1, minWidth: 0, minHeight: 52, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, justifyContent: 'center' },
-  clockButton: { flexBasis: 120, flexGrow: 0, flexShrink: 0, width: 120, alignItems: 'center' },
-  clockText: { fontVariant: ['tabular-nums'] },
-  moreButton: { minHeight: 52, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
-  moreFields: { gap: Spacing.xl },
+  timeSection: { gap: Spacing.sm },
+  moreButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
+  moreLabel: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', flex: 1, gap: Spacing.sm },
+  moreFields: { gap: Spacing.lg },
   choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  amountChoice: { flexBasis: '30%', flexGrow: 1, minWidth: 80 },
+  wideAmountChoice: { minWidth: 112 },
+  colorChoice: { flexBasis: '45%', flexGrow: 1, minWidth: 120 },
+  swatch: { width: 26, height: 26, borderRadius: 13, flexShrink: 0 },
+  clearSwatch: { borderWidth: 1 },
   pressed: { opacity: 0.7 },
 });

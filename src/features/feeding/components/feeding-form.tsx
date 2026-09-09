@@ -1,12 +1,5 @@
-import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
@@ -14,7 +7,8 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
-import { keyboardAvoidingBehavior, useFormKeyboardVerticalOffset } from '@/components/ui/keyboard-behavior';
+import { FormScreen } from '@/components/ui/form-screen';
+import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import {
   inferFeedingComponents,
@@ -33,11 +27,10 @@ type Props = {
   initialInput: FeedingCreateInput;
   clientRequestId: string | null;
   submitLabel?: string;
+  headerSubtitle?: string;
   onSave(input: FeedingCreateInput, clientRequestId: string | null): Promise<void>;
   onDelete?: () => void;
 };
-
-type PickerMode = 'date' | 'time' | null;
 
 export function createSubmissionLock() {
   let active = false;
@@ -66,42 +59,6 @@ function toInputNumber(value: string) {
   return value === '' ? null : Number(value);
 }
 
-function updateDatePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(
-    selected.getFullYear(),
-    selected.getMonth(),
-    selected.getDate(),
-    current.getHours(),
-    current.getMinutes(),
-    current.getSeconds(),
-    current.getMilliseconds(),
-  ).getTime();
-}
-
-function updateTimePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(
-    current.getFullYear(),
-    current.getMonth(),
-    current.getDate(),
-    selected.getHours(),
-    selected.getMinutes(),
-    0,
-    0,
-  ).getTime();
-}
-
-function formatDate(ms: number) {
-  const date = new Date(ms);
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatTime(ms: number) {
-  const date = new Date(ms);
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-}
-
 type NumericFieldProps = {
   label: string;
   accessibilityLabel: string;
@@ -122,55 +79,52 @@ function NumericField({
   onChange,
 }: NumericFieldProps) {
   const theme = useTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const stackedNumber = width < 360 || fontScale > 1.3;
   const adjust = (delta: number) => {
     const current = /^\d+$/.test(value) ? Number(value) : 0;
     onChange(Math.max(0, current + delta).toString());
   };
+  const renderStep = (direction: 'decrease' | 'increase') => (
+    <Pressable
+      accessibilityLabel={`${accessibilityLabel}${direction === 'decrease' ? '减少' : '增加'}${step}`}
+      accessibilityRole="button"
+      onPress={() => adjust((direction === 'decrease' ? -1 : 1) * (step ?? 0))}
+      style={({ pressed }) => [
+        styles.stepButton,
+        stackedNumber && styles.wideStepButton,
+        { backgroundColor: theme.primaryContainer },
+        pressed && styles.pressed,
+      ]}>
+      <AppIcon color={theme.primary} name={direction === 'decrease' ? 'remove' : 'add'} size={28} />
+    </Pressable>
+  );
 
   return (
     <FormField label={label} error={error}>
       <View style={styles.numberRow}>
-        {step && (
-          <Pressable
-            accessibilityLabel={`${label}减少${step}`}
-            accessibilityRole="button"
-            onPress={() => adjust(-step)}
-            style={({ pressed }) => [
-              styles.stepButton,
-              { backgroundColor: theme.surfaceElevated, borderColor: theme.border },
-              pressed && styles.pressed,
-            ]}>
-            <AppIcon color={theme.textPrimary} name="remove" size={24} />
-          </Pressable>
-        )}
-        <View style={styles.numberInputWrap}>
+        {step && !stackedNumber ? renderStep('decrease') : null}
+        <View style={[styles.numberInputWrap, { backgroundColor: theme.primaryContainer }]}>
           <AppTextInput
             accessibilityLabel={accessibilityLabel}
+            error={error}
             keyboardType="number-pad"
             maxLength={3}
             onChangeText={(next) => {
               if (/^\d*$/.test(next)) onChange(next);
             }}
-            selectTextOnFocus
-            style={styles.numberInput}
+            // Android RN 0.86 can defer auto-selection until the first digit
+            // lays out, causing the next digit to replace it in an empty field.
+            selectTextOnFocus={Platform.OS !== 'android'}
+            style={[styles.numberInput, { backgroundColor: theme.primaryContainer }]}
             value={value}
           />
-          <ThemedText pointerEvents="none" style={styles.numberSuffix} themeColor="textSecondary">{suffix}</ThemedText>
+          <ThemedText pointerEvents="none" themeColor="textSecondary">{suffix}</ThemedText>
         </View>
-        {step && (
-          <Pressable
-            accessibilityLabel={`${label}增加${step}`}
-            accessibilityRole="button"
-            onPress={() => adjust(step)}
-            style={({ pressed }) => [
-              styles.stepButton,
-              { backgroundColor: theme.surfaceElevated, borderColor: theme.border },
-              pressed && styles.pressed,
-            ]}>
-            <AppIcon color={theme.textPrimary} name="add" size={24} />
-          </Pressable>
-        )}
+        {step && !stackedNumber ? renderStep('increase') : null}
       </View>
+      {step && stackedNumber ? <View style={styles.numberRow}>{renderStep('decrease')}{renderStep('increase')}</View> : null}
+      {step ? <ThemedText type="small" themeColor="textMuted" style={styles.stepHint}>每次增减 {step}ml</ThemedText> : null}
     </FormField>
   );
 }
@@ -178,12 +132,14 @@ function NumericField({
 export function FeedingForm({
   initialInput,
   clientRequestId,
-  submitLabel = '完成',
+  submitLabel = '保存记录',
+  headerSubtitle,
   onSave,
   onDelete,
 }: Props) {
   const theme = useTheme();
-  const keyboardVerticalOffset = useFormKeyboardVerticalOffset();
+  const { width, fontScale } = useWindowDimensions();
+  const stackedChoices = width < 360 || fontScale > 1.3;
   const submissionLock = useRef(createSubmissionLock());
   const [feedingType, setFeedingType] = useState(initialInput.feedingType);
   const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
@@ -198,19 +154,8 @@ export function FeedingForm({
   );
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FeedingValidationField, string>>>({});
   const [note, setNote] = useState(initialInput.note ?? '');
-  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handlePickerChange = (_event: DateTimePickerChangeEvent, selectedDate: Date) => {
-    const mode = pickerMode;
-    setPickerMode(null);
-    if (!mode) return;
-    clearFieldError('eventTimeMs');
-    setEventTimeMs((current) =>
-      mode === 'date' ? updateDatePart(current, selectedDate) : updateTimePart(current, selectedDate),
-    );
-  };
 
   const clearFieldError = (field: FeedingValidationField) => {
     setFieldErrors((current) => {
@@ -300,15 +245,30 @@ export function FeedingForm({
     : fieldErrors.feedingType;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={keyboardAvoidingBehavior()}
-      keyboardVerticalOffset={keyboardVerticalOffset}>
-      <ScrollView
-        style={{ backgroundColor: theme.background }}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}>
+    <FormScreen
+      title="记录喝奶"
+      subtitle={headerSubtitle}
+      icon="feeding"
+      footer={(
+        <>
+          {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
+          <AppButton
+            accessibilityLabel="保存喝奶记录"
+            label={submitLabel}
+            loading={saving}
+            onPress={() => { void handleSave(); }}
+          />
+          {onDelete ? (
+            <AppButton
+              accessibilityLabel="删除喝奶记录"
+              disabled={saving}
+              label="删除记录"
+              onPress={onDelete}
+              variant="destructive-ghost"
+            />
+          ) : null}
+        </>
+      )}>
         <FormField label="喂养方式" error={feedingType === 'mixed' ? null : fieldErrors.feedingType}>
           <View style={styles.segment}>
             {typeOptions.map((option) => {
@@ -318,8 +278,19 @@ export function FeedingForm({
                   key={option.value}
                   accessibilityLabel={option.accessibilityLabel}
                   label={option.label}
+                  leading={(
+                    <View style={styles.typeIcon} pointerEvents="none">
+                      <AppIcon
+                        color={selected ? theme.primary : option.value === 'mixed' ? theme.poop : option.value === 'breast' ? theme.other : theme.feeding}
+                        name={option.value === 'breast' ? 'breastfeeding' : 'feeding'}
+                        size={30}
+                      />
+                      {option.value === 'mixed' ? <AppIcon color={selected ? theme.primary : theme.poop} name="add" size={16} /> : null}
+                    </View>
+                  )}
                   onPress={() => selectFeedingType(option.value)}
                   selected={selected}
+                  style={[styles.typeChoice, stackedChoices && styles.stackedChoice]}
                 />
               );
             })}
@@ -351,39 +322,22 @@ export function FeedingForm({
           </FormField>
         )}
 
-        <FormField label="记录时间" error={fieldErrors.eventTimeMs}>
-          <View style={styles.timeRow}>
-            <Pressable
-              accessibilityLabel="修改记录日期"
-              accessibilityRole="button"
-              onPress={() => setPickerMode('date')}
-              style={[styles.timeButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText numberOfLines={2}>{formatDate(eventTimeMs)}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="修改记录时间"
-              accessibilityRole="button"
-              onPress={() => setPickerMode('time')}
-              style={[styles.timeButton, styles.clockButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText style={styles.clockText}>{formatTime(eventTimeMs)}</ThemedText>
-            </Pressable>
-          </View>
-          {pickerMode && (
-            <DateTimePicker
-              value={new Date(eventTimeMs)}
-              mode={pickerMode}
-              display="default"
-              is24Hour
-              maximumDate={pickerMode === 'date' ? new Date() : undefined}
-              onValueChange={handlePickerChange}
-              onDismiss={() => setPickerMode(null)}
-            />
-          )}
-        </FormField>
+        <RecordDateTimeField
+          label="记录时间"
+          error={fieldErrors.eventTimeMs}
+          valueMs={eventTimeMs}
+          maximumDate={new Date()}
+          dateAccessibilityLabel="修改记录日期"
+          timeAccessibilityLabel="修改记录时间"
+          onChange={(value) => {
+            setEventTimeMs(value);
+            clearFieldError('eventTimeMs');
+          }}
+        />
 
         {showsFormula && (
           <NumericField
-            label="奶粉量"
+            label={feedingType === 'mixed' ? '奶粉量' : '奶量'}
             accessibilityLabel="奶粉量"
             value={milkAmount}
             suffix="ml"
@@ -398,7 +352,7 @@ export function FeedingForm({
 
         {showsBottleBreast && (
           <NumericField
-            label="瓶喂母乳量"
+            label={feedingType === 'mixed' ? '瓶喂母乳量' : '奶量'}
             accessibilityLabel="瓶喂母乳量"
             value={breastMilkAmount}
             suffix="ml"
@@ -447,74 +401,50 @@ export function FeedingForm({
               setNote(value);
               clearFieldError('note');
             }}
-            placeholder="选填"
+            placeholder="记下这次喝奶的小细节"
+            error={fieldErrors.note}
             value={note}
           />
         </FormField>
 
-        {errorMessage && (
-          <ThemedText themeColor="danger" selectable>
-            {errorMessage}
-          </ThemedText>
-        )}
-
-        <AppButton
-          accessibilityLabel="保存喝奶记录"
-          label={submitLabel}
-          loading={saving}
-          onPress={() => { void handleSave(); }}
-        />
-
-        {onDelete && (
-          <AppButton
-            accessibilityLabel="删除喝奶记录"
-            disabled={saving}
-            label="删除记录"
-            onPress={onDelete}
-            variant="destructive"
-          />
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </FormScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: 160, gap: Spacing.xl },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  timeRow: { flexDirection: 'row', gap: Spacing.sm },
-  timeButton: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 50,
-    borderWidth: 1,
-    borderRadius: Radius.card,
-    paddingHorizontal: Spacing.md,
-    justifyContent: 'center',
-  },
-  clockButton: { flexBasis: 120, flexGrow: 0, flexShrink: 0, width: 120, alignItems: 'center' },
-  clockText: { fontVariant: ['tabular-nums'] },
-  numberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  typeChoice: { flexBasis: '47%', flexGrow: 1, minHeight: 60 },
+  stackedChoice: { flexBasis: '100%' },
+  typeIcon: { flexDirection: 'row', alignItems: 'center' },
+  numberRow: { flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm },
   numberInputWrap: {
     flex: 1,
     minWidth: 0,
-    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.control,
+    paddingHorizontal: Spacing.sm,
+    gap: Spacing.xs,
   },
   numberInput: {
-    ...Typography.keyNumber,
-    paddingRight: 64,
+    ...Typography.inputNumber,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 64,
+    paddingHorizontal: 0,
+    borderWidth: 0,
     textAlign: 'center',
   },
-  numberSuffix: { position: 'absolute', right: Spacing.md, top: 16 },
   stepButton: {
     width: 54,
-    height: 54,
-    borderWidth: 1,
-    borderRadius: Radius.card,
+    minHeight: 64,
+    borderRadius: Radius.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stepHint: { textAlign: 'center' },
+  wideStepButton: { flex: 1, minHeight: 48 },
   durationGrid: { gap: Spacing.lg },
   pressed: { opacity: 0.7 },
 });

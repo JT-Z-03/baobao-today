@@ -20,7 +20,7 @@ const mockPeeService = {
 
 jest.mock('expo-router', () => ({ useRouter: () => ({ back: mockRouterBack }) }));
 jest.mock('@/application/app-state/app-state-provider', () => ({
-  useAppState: () => ({ peeService: mockPeeService }),
+  useAppState: () => ({ peeService: mockPeeService, babyProfile: { name: '示例宝宝', birthDate: '1970-01-01' } }),
 }));
 
 describe('PeeFormScreen', () => {
@@ -31,6 +31,7 @@ describe('PeeFormScreen', () => {
   test('loads edit values and requires the exact delete confirmation', async () => {
     const screen = await render(<PeeFormScreen recordId="pee-1" />);
     const deleteButton = await screen.findByLabelText('删除小便记录');
+    expect(screen.getByText('示例宝宝 · 出生第 1 天')).toBeTruthy();
     expect(screen.getByLabelText('选择尿量 中').props.accessibilityState.selected).toBe(true);
 
     await fireEvent.press(deleteButton);

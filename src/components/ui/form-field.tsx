@@ -2,7 +2,7 @@ import type { PropsWithChildren } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Typography } from '@/constants/theme';
 
 type FormFieldProps = PropsWithChildren<{
   label: string;
@@ -15,7 +15,7 @@ export function FormField({ label, optional = false, error, hint, children }: Fo
   return (
     <View style={styles.field}>
       <View style={styles.labelRow}>
-        <ThemedText type="smallBold">{label}</ThemedText>
+        <ThemedText style={Typography.fieldLabel}>{label}</ThemedText>
         {optional ? <ThemedText themeColor="textMuted" type="small">选填</ThemedText> : null}
       </View>
       {children}

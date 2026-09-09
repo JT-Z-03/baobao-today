@@ -21,7 +21,7 @@ export function RecordTypeBadge({ type, label }: { type: RecordVisualType; label
   return (
     <View style={[styles.badge, { backgroundColor: theme[tokens.container] }]}>
       <AppIcon color={theme[tokens.color]} name={type} size={18} />
-      <ThemedText themeColor={tokens.color} type="smallBold" style={styles.label}>{label}</ThemedText>
+      <ThemedText themeColor="textPrimary" type="smallBold" style={styles.label}>{label}</ThemedText>
     </View>
   );
 }

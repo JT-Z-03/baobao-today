@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormScreenState } from '@/components/ui/form-screen-state';
+import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
+import { toLocalDateKey } from '@/domain/date/local-date';
 import type { OtherCoreInput } from '@/domain/other/other';
 import { OtherForm } from '@/features/other/components/other-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -12,7 +14,7 @@ type Props = { recordId?: string };
 
 export function OtherFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { otherService } = useAppState();
+  const { babyProfile, otherService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (otherService?.createClientRequestId() ?? null));
   const [initialInput, setInitialInput] = useState<OtherCoreInput | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,9 +77,10 @@ export function OtherFormScreen({ recordId }: Props) {
   return (
     <>
       <OtherForm
+        headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(otherService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initialInput}
         clientRequestId={clientRequestId}
-        submitLabel={recordId ? '保存修改' : '完成记录'}
+        submitLabel={recordId ? '保存修改' : '保存记录'}
         onSave={handleSave}
         onDelete={handleDelete}
       />

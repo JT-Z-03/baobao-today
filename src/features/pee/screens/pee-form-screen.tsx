@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormScreenState } from '@/components/ui/form-screen-state';
+import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
+import { toLocalDateKey } from '@/domain/date/local-date';
 import type { PeeCoreInput } from '@/domain/pee/pee';
 import { PeeForm } from '@/features/pee/components/pee-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -12,7 +14,7 @@ type Props = { recordId?: string };
 
 export function PeeFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { peeService } = useAppState();
+  const { babyProfile, peeService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (peeService?.createClientRequestId() ?? null));
   const [initialInput, setInitialInput] = useState<PeeCoreInput | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,9 +79,10 @@ export function PeeFormScreen({ recordId }: Props) {
   return (
     <>
       <PeeForm
+        headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(peeService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initialInput}
         clientRequestId={clientRequestId}
-        submitLabel={recordId ? '保存修改' : '完成记录'}
+        submitLabel={recordId ? '保存修改' : '保存记录'}
         onSave={handleSave}
         onDelete={handleDelete}
       />

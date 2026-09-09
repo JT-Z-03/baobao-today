@@ -8,12 +8,15 @@ export type ThemedTextProps = TextProps & {
   themeColor?: ThemeColor;
 };
 
-export function ThemedText({ maxFontSizeMultiplier = 2, style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
+export function ThemedText({ maxFontSizeMultiplier = 2, selectable, style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
 
   return (
     <Text
       maxFontSizeMultiplier={maxFontSizeMultiplier}
+      // RN 0.86 restores Android selectable Text before its Spannable buffer,
+      // which can crash when a screen reattaches after TextInput loses focus.
+      selectable={Platform.OS === 'android' ? false : selectable}
       style={[
         { color: theme[themeColor ?? 'textPrimary'] },
         type === 'default' && styles.default,

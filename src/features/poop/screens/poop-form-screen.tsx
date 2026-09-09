@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormScreenState } from '@/components/ui/form-screen-state';
+import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
+import { toLocalDateKey } from '@/domain/date/local-date';
 import type { PoopCoreInput, PoopPhotoChange } from '@/domain/poop/poop';
 import { PoopForm } from '@/features/poop/components/poop-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -13,7 +15,7 @@ type InitialState = { input: PoopCoreInput; photoPreviewUri: string | null; hasP
 
 export function PoopFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { poopService } = useAppState();
+  const { babyProfile, poopService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (poopService?.createClientRequestId() ?? null));
   const [initial, setInitial] = useState<InitialState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -82,11 +84,12 @@ export function PoopFormScreen({ recordId }: Props) {
   return (
     <>
       <PoopForm
+        headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(poopService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initial.input}
         initialPhotoPreviewUri={initial.photoPreviewUri}
         hasInitialPhoto={initial.hasPhoto}
         clientRequestId={clientRequestId}
-        submitLabel={recordId ? '保存修改' : '完成'}
+        submitLabel={recordId ? '保存修改' : '保存记录'}
         onSave={handleSave}
         onDelete={handleDelete}
       />

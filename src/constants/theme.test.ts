@@ -40,15 +40,22 @@ describe('semantic design tokens', () => {
     }));
     expect(contrast(Colors[mode].textPrimary, Colors[mode].background)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(Colors[mode].primaryText, Colors[mode].primary)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(Colors[mode].primaryText, Colors[mode].primaryPressed)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(Colors[mode].primaryOnContainer, Colors[mode].primaryContainer)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(Colors[mode].textMuted, Colors[mode].background)).toBeGreaterThanOrEqual(4.5);
+    for (const background of [Colors[mode].background, Colors[mode].surface, Colors[mode].surfaceElevated]) {
+      expect(contrast(Colors[mode].textPrimary, background)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(Colors[mode].textSecondary, background)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   test('spacing, radius and typography use the approved finite scales', () => {
     expect(Object.values(SpacingScale)).toEqual([4, 8, 12, 16, 20, 24, 32]);
-    expect(Object.values(Radius)).toEqual([4, 6, 8]);
+    expect(Object.values(Radius)).toEqual([8, 12, 16, 20, 24]);
     expect(Typography).toEqual(expect.objectContaining({
-      pageTitle: expect.objectContaining({ fontSize: 30, lineHeight: 38 }),
-      sectionTitle: expect.objectContaining({ fontSize: 20, lineHeight: 28 }),
-      keyNumber: expect.objectContaining({ fontSize: 24, lineHeight: 32 }),
+      pageTitle: expect.objectContaining({ fontSize: 36, lineHeight: 44 }),
+      sectionTitle: expect.objectContaining({ fontSize: 22, lineHeight: 30 }),
+      keyNumber: expect.objectContaining({ fontSize: 28, lineHeight: 36 }),
       body: expect.objectContaining({ fontSize: 16, lineHeight: 24 }),
       label: expect.objectContaining({ fontSize: 14, lineHeight: 20 }),
       error: expect.objectContaining({ fontSize: 14, lineHeight: 20 }),

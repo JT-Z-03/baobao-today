@@ -1,4 +1,8 @@
 import { Host, Icon } from '@expo/ui';
+import { Image } from 'expo-image';
+import { UiAssets } from '@/constants/ui-assets';
+import { useTheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/theme';
 import { StyleSheet, View } from 'react-native';
 
 export type AppIconName =
@@ -7,6 +11,9 @@ export type AppIconName =
   | 'pee'
   | 'sleep'
   | 'other'
+  | 'clock'
+  | 'milkVolume'
+  | 'breastfeeding'
   | 'calendar'
   | 'previous'
   | 'next'
@@ -33,6 +40,7 @@ const icons = {
   pee: Icon.select({ ios: 'drop.triangle.fill', android: import('@expo/material-symbols/water_drop.xml') }),
   sleep: Icon.select({ ios: 'moon.fill', android: import('@expo/material-symbols/bedtime.xml') }),
   other: Icon.select({ ios: 'ellipsis', android: import('@expo/material-symbols/more_horiz.xml') }),
+  clock: Icon.select({ ios: 'clock', android: import('@expo/material-symbols/schedule.xml') }),
   calendar: Icon.select({ ios: 'calendar', android: import('@expo/material-symbols/calendar_today.xml') }),
   previous: Icon.select({ ios: 'chevron.left', android: import('@expo/material-symbols/chevron_left.xml') }),
   next: Icon.select({ ios: 'chevron.right', android: import('@expo/material-symbols/chevron_right.xml') }),
@@ -52,7 +60,7 @@ const icons = {
   remove: Icon.select({ ios: 'minus', android: import('@expo/material-symbols/remove.xml') }),
   error: Icon.select({ ios: 'exclamationmark.circle', android: import('@expo/material-symbols/error.xml') }),
   loading: Icon.select({ ios: 'hourglass', android: import('@expo/material-symbols/hourglass.xml') }),
-} satisfies Record<AppIconName, ReturnType<typeof Icon.select>>;
+} satisfies Record<Exclude<AppIconName, 'milkVolume' | 'breastfeeding'>, ReturnType<typeof Icon.select>>;
 
 export function AppIcon({ name, color, size = 22, accessibilityLabel }: {
   name: AppIconName;
@@ -60,10 +68,18 @@ export function AppIcon({ name, color, size = 22, accessibilityLabel }: {
   size?: number;
   accessibilityLabel?: string;
 }) {
+  const theme = useTheme();
+  const imageName = name === 'poop' ? (theme.background === Colors.dark.background ? 'poopDark' : 'poopLight') : name;
+  const source = imageName in UiAssets ? UiAssets[imageName as keyof typeof UiAssets] : null;
+  if (source) return (
+    <View pointerEvents="none" accessible={Boolean(accessibilityLabel)} accessibilityLabel={accessibilityLabel} style={[styles.host, { width: size, height: size }]} testID="app-icon-wrapper">
+      <Image source={source} contentFit="contain" style={{ width: size, height: size }} tintColor={name === 'poop' ? undefined : color} accessible={false} />
+    </View>
+  );
   return (
     <View pointerEvents="none" style={[styles.host, { width: size, height: size }]} testID="app-icon-wrapper">
-      <Host accessible={Boolean(accessibilityLabel)} matchContents style={styles.host}>
-        <Icon accessibilityLabel={accessibilityLabel} color={color} name={icons[name]} size={size} />
+      <Host accessible={Boolean(accessibilityLabel)} style={[styles.host, { width: size, height: size }]}>
+        <Icon accessibilityLabel={accessibilityLabel} color={color} name={icons[name as keyof typeof icons]} size={size} />
       </Host>
     </View>
   );

@@ -59,6 +59,7 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test:assets": "node ./scripts/verify-android-assets.mjs",
+    "test:ui-assets": "node ./scripts/verify-ui-assets.mjs",
     "test:schema": "node --no-warnings --experimental-strip-types ./scripts/verify-schema.mjs",
     "test": "jest",
     "test:watch": "jest --watch"

@@ -1,13 +1,14 @@
-import { TimelineRow } from '@/components/ui/timeline-row';
+import { TimelineRow, type TimelineConnector } from '@/components/ui/timeline-row';
 import type { OtherRecord } from '@/domain/other/other';
 import { formatOtherClock, summarizeOtherNote } from '@/features/other/other-format';
 
-type Props = { record: OtherRecord; onPress(): void };
+type Props = { connector?: TimelineConnector; record: OtherRecord; onPress(): void };
 
-export function OtherRecordRow({ record, onPress }: Props) {
+export function OtherRecordRow({ record, onPress, connector }: Props) {
   const noteSummary = summarizeOtherNote(record.note);
   return (
     <TimelineRow
+      connector={connector}
       accessibilityLabel={`编辑其他记录 ${record.title}`}
       hasNote={Boolean(noteSummary)}
       note={noteSummary}

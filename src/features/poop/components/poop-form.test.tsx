@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 import {
   createPoopSubmissionLock,
@@ -92,6 +93,44 @@ describe('PoopForm', () => {
     expect(screen.getByLabelText('选择大便颜色 黄色').props.accessibilityState.selected).toBe(true);
     await fireEvent.press(screen.getByLabelText('选择大便颜色 黄色'));
     expect(screen.getByLabelText('选择大便颜色 黄色').props.accessibilityState.selected).toBe(false);
+  });
+
+  test('keeps all observed classifications optional after selecting and clearing them', async () => {
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(
+      <PoopForm initialInput={initialInput} initialPhotoPreviewUri={null} clientRequestId="stable-request" onSave={onSave} />,
+    );
+    for (const label of ['选择大便颜色 黄色', '选择大便状态 糊状', '选择大便量 中']) {
+      await fireEvent.press(screen.getByLabelText(label));
+      await fireEvent.press(screen.getByLabelText(label));
+    }
+    await fireEvent.press(screen.getByLabelText('保存大便记录'));
+    expect(onSave).toHaveBeenCalledWith(initialInput, { kind: 'keep' }, 'stable-request');
+  });
+
+  test('can still save without a photo when the camera permission is denied', async () => {
+    jest.mocked(ImagePicker.requestCameraPermissionsAsync).mockResolvedValueOnce({
+      granted: false, canAskAgain: false, status: 'denied', expires: 'never',
+    } as Awaited<ReturnType<typeof ImagePicker.requestCameraPermissionsAsync>>);
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(
+      <PoopForm initialInput={initialInput} initialPhotoPreviewUri={null} clientRequestId="stable-request" onSave={onSave} />,
+    );
+    await fireEvent.press(screen.getByLabelText('拍照'));
+    expect(await screen.findByText('照片权限已关闭，可在系统设置中开启；仍可保存不带照片的记录。')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('保存大便记录'));
+    expect(onSave).toHaveBeenCalledWith(initialInput, { kind: 'keep' }, 'stable-request');
+  });
+
+  test('removes an unavailable existing photo without changing the record fields', async () => {
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(
+      <PoopForm initialInput={initialInput} initialPhotoPreviewUri={null} hasInitialPhoto clientRequestId={null} onSave={onSave} />,
+    );
+    await fireEvent.press(screen.getByLabelText('移除照片'));
+    expect(screen.queryByLabelText('照片暂时无法显示')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('保存大便记录'));
+    expect(onSave).toHaveBeenCalledWith(initialInput, { kind: 'remove' }, null);
   });
 
   test('submission lock rejects a second save while the first is pending', async () => {

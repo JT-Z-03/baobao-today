@@ -102,3 +102,7 @@ smoke-*.png
 *.log
 .metro/
 /baobao-today-build/
+
+# local agent workspaces
+/.worktrees/
+/.superpowers/

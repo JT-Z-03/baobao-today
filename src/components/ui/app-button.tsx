@@ -4,7 +4,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-type AppButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost';
+type AppButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'destructive-ghost';
 
 type AppButtonProps = {
   label: string;
@@ -36,8 +36,8 @@ export function AppButton({
     : variant === 'destructive'
       ? { backgroundColor: theme.danger, borderColor: theme.danger, text: 'dangerText' as const }
       : variant === 'secondary'
-        ? { backgroundColor: theme.surfaceElevated, borderColor: theme.border, text: 'textPrimary' as const }
-        : { backgroundColor: 'transparent', borderColor: 'transparent', text: 'primary' as const };
+        ? { backgroundColor: theme.surface, borderColor: theme.primary, text: 'primary' as const }
+        : { backgroundColor: 'transparent', borderColor: 'transparent', text: variant === 'destructive-ghost' ? 'danger' as const : 'primary' as const };
 
   return (
     <Pressable
@@ -64,8 +64,8 @@ export function AppButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 52,
-    borderRadius: Radius.card,
+    minHeight: 54,
+    borderRadius: Radius.button,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -74,6 +74,6 @@ const styles = StyleSheet.create({
   },
   compact: { minHeight: 48, alignSelf: 'flex-start' },
   content: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
-  label: { textAlign: 'center', flexShrink: 1 },
+  label: { textAlign: 'center', flexShrink: 1, fontSize: 18, lineHeight: 26, fontWeight: '700' },
   disabled: { opacity: 0.48 },
 });
