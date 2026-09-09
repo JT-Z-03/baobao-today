@@ -1,14 +1,15 @@
-import { TimelineRow } from '@/components/ui/timeline-row';
+import { TimelineRow, type TimelineConnector } from '@/components/ui/timeline-row';
 import type { PoopRecord } from '@/domain/poop/poop';
 import { formatEventTime } from '@/features/feeding/feeding-format';
 import { formatPoopDetails } from '@/features/poop/poop-format';
 
-type Props = { record: PoopRecord; onPress(): void };
+type Props = { connector?: TimelineConnector; record: PoopRecord; onPress(): void };
 
-export function PoopRecordRow({ record, onPress }: Props) {
+export function PoopRecordRow({ record, onPress, connector }: Props) {
   const details = formatPoopDetails(record);
   return (
     <TimelineRow
+      connector={connector}
       accessibilityLabel={`编辑大便记录 ${formatEventTime(record.eventTimeMs)}`}
       detail={details}
       hasNote={Boolean(record.note)}

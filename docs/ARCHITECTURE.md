@@ -26,6 +26,8 @@ flowchart LR
 
 界面不直接执行 SQL。应用服务通过端口调用 repository，使领域规则和数据实现保持可独立测试。
 
+公共 UI 使用 `theme.ts` 的浅深色 token；`FormScreen`、`RecordDateTimeField`、`RecordIconTile` 和 `TimelineRow` 统一表单、安全区、图标和时间线展示。`assets/ui` 仅存12张运行 PNG 和来源清单，`test:ui-assets` 验证真实透明通道、尺寸与哈希。首页奶量直接读取 service 的 `measurableTotalMl`；界面不另算统计。公开素材来源见 [UI 素材说明](UI-ASSETS.md)，运行示例见 `docs/screenshots/soft-rose`；截图不会作为整页图片打包。
+
 ## SQLite
 
 当前 schema 版本为 `user_version=9`。数据库包含宝宝资料、统一记录、主题设置和喝奶提醒设置。五类记录为：

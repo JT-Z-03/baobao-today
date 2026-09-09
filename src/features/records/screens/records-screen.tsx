@@ -1,14 +1,16 @@
 import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ThemedText } from '@/components/themed-text';
 import { AppIcon } from '@/components/ui/app-icon';
+import { AppIllustration } from '@/components/ui/app-illustration';
+import { BrandMark } from '@/components/ui/brand-mark';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { NativeTabScreenContainer } from '@/components/ui/screen-container';
-import { EmptyState, ErrorState } from '@/components/ui/status-state';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/status-state';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import type { FeedingRecord } from '@/domain/feeding/feeding';
 import type { PoopRecord } from '@/domain/poop/poop';
@@ -22,6 +24,7 @@ import { PoopRecordRow } from '@/features/poop/components/poop-record-row';
 import { PeeRecordRow } from '@/features/pee/components/pee-record-row';
 import { SleepHistoryRow } from '@/features/sleep/components/sleep-history-row';
 import { OtherRecordRow } from '@/features/other/components/other-record-row';
+import { resolveRecordsDateIntent } from '@/features/records/records-navigation';
 import { useTheme } from '@/hooks/use-theme';
 
 type Filter = 'all' | 'feeding' | 'poop' | 'pee' | 'sleep' | 'other';
@@ -29,28 +32,43 @@ type DailyRecord = FeedingRecord | PoopRecord | PeeRecord | SleepRecord | OtherR
 
 function formatDateTitle(dateKey: string) {
   const date = parseLocalDateKey(dateKey);
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 · ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]}`;
 }
 
 export function RecordsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { feedingService, poopService, peeService, sleepService, otherService } = useAppState();
+  const { date: dateIntent } = useLocalSearchParams<{ date?: string | string[] }>();
+  const { babyProfile, feedingService, poopService, peeService, sleepService, otherService } = useAppState();
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(Date.now()));
   const [filter, setFilter] = useState<Filter>('all');
   const [records, setRecords] = useState<DailyRecord[]>([]);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [today, setToday] = useState(() => toLocalDateKey(Date.now()));
   const [refreshedAtMs, setRefreshedAtMs] = useState(() => Date.now());
 
+  useFocusEffect(useCallback(() => {
+    const intendedDate = resolveRecordsDateIntent(dateIntent, toLocalDateKey(Date.now()));
+    if (intendedDate === null) return;
+    setSelectedDate(intendedDate);
+    setFilter('all');
+    setDatePickerVisible(false);
+    router.setParams({ date: undefined });
+  }, [dateIntent, router]));
+
   useFocusEffect(
     useCallback(() => {
+      // The explicit retry generation reruns the focused read after a failed request.
+      void reloadKey;
       if (!feedingService || !poopService || !peeService || !sleepService || !otherService) return undefined;
       let active = true;
       setToday(toLocalDateKey(Date.now()));
       setRefreshedAtMs(Date.now());
       setLoadError(null);
+      setLoading(true);
       Promise.all([
         feedingService.getHistory(selectedDate),
         poopService.getHistory(selectedDate),
@@ -59,16 +77,29 @@ export function RecordsScreen() {
         otherService.getHistory(selectedDate),
       ])
         .then(([feeding, poop, pee, sleep, other]) => {
-          if (active) setRecords(sortRecordsByOccurrence([...feeding, ...poop, ...pee, ...sleep, ...other]));
+          if (active) {
+            setRecords(sortRecordsByOccurrence([...feeding, ...poop, ...pee, ...sleep, ...other]));
+            setLoading(false);
+          }
         })
-        .catch((error) => {
-          if (active) setLoadError(error instanceof Error ? error.message : String(error));
+        .catch(() => {
+          if (active) {
+            setLoadError('历史记录加载失败，请重试。');
+            setLoading(false);
+          }
         });
       return () => {
         active = false;
       };
-    }, [feedingService, otherService, poopService, peeService, selectedDate, sleepService]),
+    }, [feedingService, otherService, poopService, peeService, reloadKey, selectedDate, sleepService]),
   );
+
+  const hasActiveSleep = records.some((record) => record.type === 'sleep' && record.status === 'sleeping');
+  useFocusEffect(useCallback(() => {
+    if (!hasActiveSleep) return;
+    const timer = setInterval(() => setRefreshedAtMs(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [hasActiveSleep]));
 
   if (!feedingService || !poopService || !peeService || !sleepService || !otherService) return null;
   const handleDateChange = (_event: DateTimePickerChangeEvent, date: Date) => {
@@ -82,28 +113,36 @@ export function RecordsScreen() {
   const openSleep = (id: string) => router.push({ pathname: '/sleep/[id]', params: { id } });
   const openOther = (id: string) => router.push({ pathname: '/other/[id]', params: { id } });
   const visibleRecords = filter === 'all' ? records : records.filter((record) => record.type === filter);
+  const selectedDay = parseLocalDateKey(selectedDate);
 
   return (
     <NativeTabScreenContainer contentStyle={styles.content}>
       <View style={styles.heading}>
-        <ThemedText style={styles.title} selectable>记录</ThemedText>
-        <View style={styles.dateControls}>
+        <BrandMark />
+        <View style={styles.hero}>
+          <View style={styles.heroCopy}>
+            <ThemedText style={styles.title} selectable>记录</ThemedText>
+            <ThemedText selectable>{babyProfile ? `${babyProfile.name}的每一天` : '宝宝的每一天'}</ThemedText>
+          </View>
+          <AppIllustration name="babySmile" width={80} height={80} />
+        </View>
+        <View style={[styles.dateControls, { backgroundColor: theme.primaryContainer }]}>
           <Pressable
             accessibilityHint="查看前一天记录"
             accessibilityLabel="前一天"
             accessibilityRole="button"
             onPress={() => setSelectedDate((date) => shiftLocalDateKey(date, -1))}
-            style={[styles.arrowButton, { borderColor: theme.border }]}>
-            <AppIcon color={theme.textPrimary} name="previous" size={24} />
+            style={[styles.arrowButton, { backgroundColor: theme.surface }]}>
+            <AppIcon color={theme.primaryOnContainer} name="previous" size={24} />
           </Pressable>
           <Pressable
             accessibilityHint="打开日期选择器"
             accessibilityLabel="选择记录日期"
             accessibilityRole="button"
             onPress={() => setDatePickerVisible(true)}
-            style={[styles.dateButton, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+            style={styles.dateButton}>
             <AppIcon color={theme.primary} name="calendar" size={20} />
-            <ThemedText numberOfLines={2} style={styles.dateText} selectable>{formatDateTitle(selectedDate)}</ThemedText>
+            <ThemedText style={styles.dateText}>{formatDateTitle(selectedDate)}</ThemedText>
           </Pressable>
           <Pressable
             accessibilityHint="查看后一天记录"
@@ -112,7 +151,7 @@ export function RecordsScreen() {
             accessibilityState={{ disabled: selectedDate >= today }}
             disabled={selectedDate >= today}
             onPress={() => setSelectedDate((date) => shiftLocalDateKey(date, 1))}
-            style={[styles.arrowButton, { borderColor: theme.border }, selectedDate >= today && styles.disabled]}>
+            style={[styles.arrowButton, { backgroundColor: theme.surface }, selectedDate >= today && styles.disabled]}>
             <AppIcon color={theme.textPrimary} name="next" size={24} />
           </Pressable>
         </View>
@@ -155,31 +194,41 @@ export function RecordsScreen() {
         })}
       </ScrollView>
 
-      {loadError ? (
-        <ErrorState message="历史记录加载失败，请重新进入页面重试。" />
+      <View style={[styles.dayLabel, { backgroundColor: theme.primaryContainer }]}>
+        <ThemedText type="smallBold" selectable>
+          {selectedDay.getMonth() + 1}月{selectedDay.getDate()}日{selectedDate === today ? ' · 今天' : ''}
+        </ThemedText>
+      </View>
+
+      {loading ? (
+        <LoadingState message="正在读取这一天的记录" />
+      ) : loadError ? (
+        <ErrorState message={loadError} actionLabel="重新加载历史记录" onAction={() => setReloadKey((value) => value + 1)} />
       ) : visibleRecords.length ? (
         <View style={styles.list}>
-          {visibleRecords.map((record) => {
+          {visibleRecords.map((record, index) => {
+            const connector = visibleRecords.length === 1 ? 'single' : index === 0 ? 'start' : index === visibleRecords.length - 1 ? 'end' : 'middle';
             if (record.type === 'feeding') {
-              return <FeedingRecordRow key={record.id} record={record} onPress={() => openRecord(record.id)} />;
+              return <FeedingRecordRow key={record.id} record={record} connector={connector} onPress={() => openRecord(record.id)} />;
             }
             if (record.type === 'poop') {
-              return <PoopRecordRow key={record.id} record={record} onPress={() => openPoop(record.id)} />;
+              return <PoopRecordRow key={record.id} record={record} connector={connector} onPress={() => openPoop(record.id)} />;
             }
             if (record.type === 'sleep') {
               return (
                 <SleepHistoryRow
                   key={record.id}
                   record={record}
+                  connector={connector}
                   nowMs={refreshedAtMs}
                   onPress={() => openSleep(record.id)}
                 />
               );
             }
             if (record.type === 'other') {
-              return <OtherRecordRow key={record.id} record={record} onPress={() => openOther(record.id)} />;
+              return <OtherRecordRow key={record.id} record={record} connector={connector} onPress={() => openOther(record.id)} />;
             }
-            return <PeeRecordRow key={record.id} record={record} onPress={() => openPee(record.id)} />;
+            return <PeeRecordRow key={record.id} record={record} connector={connector} onPress={() => openPee(record.id)} />;
           })}
         </View>
       ) : (
@@ -200,15 +249,18 @@ export function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: 120, gap: Spacing.xl },
-  heading: { paddingTop: Spacing.xs, gap: Spacing.md },
+  content: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.xxl, gap: Spacing.lg },
+  heading: { paddingTop: Spacing.xs, gap: Spacing.xl },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  heroCopy: { flex: 1, minWidth: 0, gap: Spacing.xs },
   title: { ...Typography.pageTitle },
-  dateControls: { flexDirection: 'row', alignItems: 'stretch', gap: Spacing.sm },
-  arrowButton: { width: 48, minHeight: 52, borderWidth: 1, borderRadius: Radius.card, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
-  dateButton: { flex: 1, minWidth: 0, minHeight: 52, borderWidth: 1, borderRadius: Radius.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.sm },
+  dateControls: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, padding: Spacing.sm, borderRadius: Radius.card },
+  arrowButton: { width: 48, minHeight: 48, borderRadius: Radius.control, alignItems: 'center', justifyContent: 'center' },
+  dateButton: { flex: 1, minWidth: 0, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.xs },
   dateText: { textAlign: 'center', flexShrink: 1 },
   filterScroll: { flexGrow: 0 },
   filterContent: { gap: Spacing.sm, paddingRight: Spacing.lg },
-  list: { gap: Spacing.sm },
+  dayLabel: { minHeight: 40, justifyContent: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.control },
+  list: { gap: 0 },
   disabled: { opacity: 0.35 },
 });

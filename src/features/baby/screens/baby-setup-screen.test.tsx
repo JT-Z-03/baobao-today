@@ -8,6 +8,8 @@ const mockReplace = jest.fn();
 const mockPush = jest.fn();
 
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: jest.fn() }));
+jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
+jest.mock('@/components/ui/app-illustration', () => ({ AppIllustration: () => null }));
 jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace, push: mockPush }) }));
 
 describe('BabySetupScreen', () => {

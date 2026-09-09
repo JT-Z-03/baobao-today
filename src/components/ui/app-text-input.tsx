@@ -31,6 +31,6 @@ export function AppTextInput({ error, multiline, onBlur, onFocus, style, ...prop
 }
 
 const styles = StyleSheet.create({
-  input: { ...Typography.body, minHeight: 52, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  multiline: { minHeight: 104, textAlignVertical: 'top' },
+  input: { ...Typography.body, minHeight: 52, borderWidth: 1, borderRadius: Radius.control, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  multiline: { minHeight: 88, textAlignVertical: 'top' },
 });

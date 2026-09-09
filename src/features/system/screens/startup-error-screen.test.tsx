@@ -2,6 +2,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import { StartupErrorScreen } from './startup-error-screen';
 
+jest.mock('@/components/ui/app-illustration', () => ({ AppIllustration: () => null }));
+
 test('shows a safe startup error and a clear retry action', async () => {
   const onRetry = jest.fn();
   const screen = await render(<StartupErrorScreen message="SQLite failed at /data/user/0/app.db" onRetry={onRetry} />);

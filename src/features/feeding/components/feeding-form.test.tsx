@@ -1,4 +1,5 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Platform } from 'react-native';
 
 import { FeedingValidationError } from '@/domain/feeding/feeding-validation';
 import { createSubmissionLock, FeedingForm } from './feeding-form';
@@ -15,6 +16,23 @@ const initialInput = {
 };
 
 describe('FeedingForm', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test.each(['android', 'ios'] as const)('%s keeps typed bottle digits and uses platform-safe auto-selection', async (platform) => {
+    jest.replaceProperty(Platform, 'OS', platform);
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(<FeedingForm initialInput={initialInput} clientRequestId="typed-bottle" onSave={onSave} />);
+    await fireEvent.press(screen.getByLabelText('选择瓶喂母乳'));
+    for (const value of ['', '1', '12', '120']) {
+      await fireEvent.changeText(screen.getByLabelText('瓶喂母乳量'), value);
+      expect(screen.getByLabelText('瓶喂母乳量').props.selectTextOnFocus).toBe(platform !== 'android');
+    }
+    await fireEvent.press(screen.getByLabelText('保存喝奶记录'));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      feedingType: 'bottle_breast', breastMilkAmountMl: 120, milkAmountMl: null,
+    }), 'typed-bottle');
+  });
+
   test('uses the stable form request id when saving', async () => {
     const onSave = jest.fn(async () => undefined);
     const screen = await render(
@@ -100,6 +118,37 @@ describe('FeedingForm', () => {
     expect(screen.getByLabelText('瓶喂母乳量')).toBeTruthy();
     expect(screen.queryByLabelText('奶粉量')).toBeNull();
     expect(screen.queryByLabelText('左侧时长')).toBeNull();
+    expect(screen.getByText('奶量')).toBeTruthy();
+    expect(screen.queryByText('瓶喂母乳量')).toBeNull();
+  });
+
+  test('single bottle breast milk writes only its own amount using the stable request', async () => {
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(
+      <FeedingForm initialInput={initialInput} clientRequestId="stable-request" onSave={onSave} />,
+    );
+    expect(screen.getByText('奶量')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('选择瓶喂母乳'));
+    await fireEvent.changeText(screen.getByLabelText('瓶喂母乳量'), '90');
+    await fireEvent.press(screen.getByLabelText('保存喝奶记录'));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      feedingType: 'bottle_breast', milkAmountMl: null, breastMilkAmountMl: 90,
+      leftDurationMin: null, rightDurationMin: null,
+    }), 'stable-request');
+  });
+
+  test('amount controls keep feeding-specific accessibility names after the visible label changes', async () => {
+    const screen = await render(
+      <FeedingForm initialInput={initialInput} clientRequestId="stable-request" onSave={jest.fn()} />,
+    );
+    await fireEvent.press(screen.getByLabelText('奶粉量增加10'));
+    expect(screen.getByLabelText('奶粉量').props.value).toBe('70');
+    await fireEvent.press(screen.getByLabelText('选择瓶喂母乳'));
+    await fireEvent.press(screen.getByLabelText('瓶喂母乳量增加10'));
+    expect(screen.getByLabelText('瓶喂母乳量').props.value).toBe('10');
+    await fireEvent.press(screen.getByLabelText('选择奶粉'));
+    expect(screen.getByLabelText('奶粉量').props.value).toBe('70');
   });
 
   test('submits only selected mixed components and keeps temporary values while switching', async () => {

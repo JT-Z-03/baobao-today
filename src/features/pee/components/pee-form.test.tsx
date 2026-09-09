@@ -50,6 +50,22 @@ describe('PeeForm', () => {
     await expect(firstRun).resolves.toBe(true);
   });
 
+  test('saves filled optional values directly from the collapsed form', async () => {
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(
+      <PeeForm initialInput={initialInput} clientRequestId="stable-request" onSave={onSave} />,
+    );
+    await fireEvent.press(screen.getByLabelText('展开更多信息'));
+    await fireEvent.press(screen.getByLabelText('选择尿量 中'));
+    await fireEvent.press(screen.getByLabelText('选择尿液颜色 淡黄'));
+    await fireEvent.changeText(screen.getByLabelText('备注'), '换尿布时记录');
+    await fireEvent.press(screen.getByLabelText('收起更多信息'));
+    await fireEvent.press(screen.getByLabelText('保存小便记录'));
+    expect(onSave).toHaveBeenCalledWith({
+      ...initialInput, amount: 'medium', color: 'light_yellow', note: '换尿布时记录',
+    }, 'stable-request');
+  });
+
   test('shows existing optional values on edit and disables save while pending', async () => {
     let finish: (() => void) | undefined;
     const onSave = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));

@@ -49,26 +49,26 @@ function RootNavigator() {
     <Stack screenOptions={{
       headerShown: false,
       contentStyle: { backgroundColor: theme.background },
-      headerStyle: { backgroundColor: theme.surface },
-      headerTintColor: theme.textPrimary,
+      headerStyle: { backgroundColor: theme.background },
+      headerTintColor: theme.primary,
       headerTitleStyle: { color: theme.textPrimary, fontSize: 18, fontWeight: '700' },
       headerShadowVisible: false,
     }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="baby-setup" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="feeding/new" options={{ headerShown: true, title: '记录喝奶' }} />
-      <Stack.Screen name="feeding/[id]" options={{ headerShown: true, title: '编辑喝奶' }} />
-      <Stack.Screen name="poop/new" options={{ headerShown: true, title: '记录大便' }} />
-      <Stack.Screen name="poop/[id]" options={{ headerShown: true, title: '编辑大便' }} />
-      <Stack.Screen name="pee/new" options={{ headerShown: true, title: '记录小便' }} />
-      <Stack.Screen name="pee/[id]" options={{ headerShown: true, title: '编辑小便' }} />
-      <Stack.Screen name="sleep/new" options={{ headerShown: true, title: '开始睡眠' }} />
-      <Stack.Screen name="sleep/[id]" options={{ headerShown: true, title: '睡眠记录' }} />
-      <Stack.Screen name="other/new" options={{ headerShown: true, title: '记录其他事件' }} />
-      <Stack.Screen name="other/[id]" options={{ headerShown: true, title: '编辑其他事件' }} />
+      <Stack.Screen name="feeding/new" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="feeding/[id]" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="poop/new" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="poop/[id]" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="pee/new" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="pee/[id]" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="sleep/new" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="sleep/[id]" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="other/new" options={{ headerShown: true, title: '' }} />
+      <Stack.Screen name="other/[id]" options={{ headerShown: true, title: '' }} />
       <Stack.Screen name="export/csv" options={{ headerShown: true, title: '导出CSV' }} />
-      <Stack.Screen name="backup" options={{ headerShown: true, title: '完整备份与恢复', gestureEnabled: false }} />
+      <Stack.Screen name="backup" options={{ headerShown: true, title: '完整备份与恢复', gestureEnabled: false, headerBackButtonMenuEnabled: false }} />
     </Stack>
   );
 }

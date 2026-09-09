@@ -6,6 +6,8 @@ import { KeyboardAvoidingView, Pressable, StyleSheet, View } from 'react-native'
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
+import { AppIcon } from '@/components/ui/app-icon';
+import { AppIllustration } from '@/components/ui/app-illustration';
 import { AppTextInput } from '@/components/ui/app-text-input';
 import { FormField } from '@/components/ui/form-field';
 import { keyboardAvoidingBehavior, useFormKeyboardVerticalOffset } from '@/components/ui/keyboard-behavior';
@@ -57,7 +59,10 @@ export function BabySetupScreen() {
       keyboardVerticalOffset={keyboardVerticalOffset}>
       <ScreenContainer contentStyle={styles.content}>
         <View style={styles.heading}>
-          <ThemedText style={styles.title} selectable>宝宝今天</ThemedText>
+          <View style={styles.hero}>
+            <ThemedText style={styles.title} selectable>宝宝今天</ThemedText>
+            <AppIllustration name="babySmile" width={80} height={80} />
+          </View>
           <ThemedText themeColor="textSecondary" selectable>填写两项资料，就可以开始记录</ThemedText>
           <ThemedText type="small" themeColor="textMuted" selectable>资料和记录只保存在当前手机</ThemedText>
         </View>
@@ -87,9 +92,11 @@ export function BabySetupScreen() {
                 { backgroundColor: theme.inputBackground, borderColor: theme.border },
                 pressed && styles.pressed,
               ]}>
-              <ThemedText selectable>
+              <AppIcon name="calendar" color={theme.primary} size={22} />
+              <ThemedText style={styles.dateCopy}>
                 {birthDate.getFullYear()}年{birthDate.getMonth() + 1}月{birthDate.getDate()}日
               </ThemedText>
+              <AppIcon name="next" color={theme.textSecondary} size={20} />
             </Pressable>
             {datePickerVisible ? (
               <DateTimePicker
@@ -113,9 +120,11 @@ export function BabySetupScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing.xxl, paddingBottom: Spacing.xxxl, gap: Spacing.xxl },
-  heading: { gap: Spacing.xs },
-  title: { ...Typography.pageTitle },
-  dateButton: { minHeight: 52, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, justifyContent: 'center' },
+  content: { flexGrow: 1, maxWidth: 560, justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.xxxl, gap: Spacing.xxl },
+  heading: { gap: Spacing.sm },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  title: { ...Typography.pageTitle, flex: 1 },
+  dateButton: { minHeight: 54, borderWidth: 1, borderRadius: Radius.control, padding: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  dateCopy: { flex: 1, fontVariant: ['tabular-nums'] },
   pressed: { opacity: 0.72 },
 });

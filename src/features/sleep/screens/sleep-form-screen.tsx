@@ -5,6 +5,8 @@ import { AppState as NativeAppState } from 'react-native';
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormScreenState } from '@/components/ui/form-screen-state';
+import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
+import { toLocalDateKey } from '@/domain/date/local-date';
 import type { SleepRecord } from '@/domain/sleep/sleep';
 import { SleepForm } from '@/features/sleep/components/sleep-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -13,7 +15,7 @@ type Props = { recordId?: string };
 
 export function SleepFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { sleepService } = useAppState();
+  const { babyProfile, sleepService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (sleepService?.createClientRequestId() ?? null));
   const [record, setRecord] = useState<SleepRecord | null>(null);
   const [newStartMs, setNewStartMs] = useState<number | null>(null);
@@ -61,9 +63,14 @@ export function SleepFormScreen({ recordId }: Props) {
     return <FormScreenState error={loadError} loadingMessage="正在读取睡眠记录" />;
   }
 
+  const headerSubtitle = babyProfile
+    ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(nowMs))} 天`
+    : undefined;
+
   if (!recordId && newStartMs !== null) {
     return (
       <SleepForm
+        headerSubtitle={headerSubtitle}
         mode="new"
         nowMs={sleepService.getCurrentTimeMs()}
         initialValue={{ startMs: newStartMs, endMs: null, note: null }}
@@ -99,6 +106,7 @@ export function SleepFormScreen({ recordId }: Props) {
   return (
     <>
       <SleepForm
+        headerSubtitle={headerSubtitle}
         mode={current.status === 'sleeping' ? 'active' : 'completed'}
         nowMs={nowMs}
         initialValue={{ startMs: current.startMs, endMs: current.endMs, note: current.note }}

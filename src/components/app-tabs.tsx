@@ -7,6 +7,7 @@ export default function AppTabs() {
 
   return (
     <NativeTabs
+      disableIndicator
       backgroundColor={colors.surface}
       indicatorColor={colors.backgroundSelected}
       iconColor={{ default: colors.textSecondary, selected: colors.primary }}
@@ -16,12 +17,12 @@ export default function AppTabs() {
       }}>
       <NativeTabs.Trigger name="today">
         <NativeTabs.Trigger.Label>今天</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'sun.max', selected: 'sun.max.fill' }} md="today" />
+        <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="records">
         <NativeTabs.Trigger.Label>记录</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="clock.arrow.circlepath" md="history" />
+        <NativeTabs.Trigger.Icon sf="clock" md="schedule" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="settings">

@@ -1,23 +1,25 @@
-import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
+import { AppIcon } from '@/components/ui/app-icon';
 import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
-import { keyboardAvoidingBehavior, useFormKeyboardVerticalOffset } from '@/components/ui/keyboard-behavior';
+import { FormScreen } from '@/components/ui/form-screen';
+import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
 import { Radius, Spacing } from '@/constants/theme';
 import type {
   LocalPhotoSource,
@@ -40,12 +42,11 @@ type Props = {
   initialPhotoPreviewUri: string | null;
   hasInitialPhoto?: boolean;
   clientRequestId: string | null;
+  headerSubtitle?: string;
   submitLabel?: string;
   onSave(input: PoopCoreInput, photoChange: PoopPhotoChange, clientRequestId: string | null): Promise<void>;
   onDelete?: () => void;
 };
-
-type PickerMode = 'date' | 'time' | null;
 
 export function createPoopSubmissionLock() {
   let active = false;
@@ -71,26 +72,6 @@ const colorOptions = Object.entries(POOP_COLOR_LABELS) as [PoopColor, string][];
 const textureOptions = Object.entries(POOP_TEXTURE_LABELS) as [PoopTexture, string][];
 const amountOptions = Object.entries(POOP_AMOUNT_LABELS) as [PoopAmount, string][];
 
-function updateDatePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(selected.getFullYear(), selected.getMonth(), selected.getDate(), current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds()).getTime();
-}
-
-function updateTimePart(currentMs: number, selected: Date) {
-  const current = new Date(currentMs);
-  return new Date(current.getFullYear(), current.getMonth(), current.getDate(), selected.getHours(), selected.getMinutes(), 0, 0).getTime();
-}
-
-function formatDate(ms: number) {
-  const date = new Date(ms);
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatTime(ms: number) {
-  const date = new Date(ms);
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-}
-
 function sourceFromResult(result: ImagePicker.ImagePickerResult): LocalPhotoSource | null {
   if (result.canceled || !result.assets[0]) return null;
   const asset = result.assets[0];
@@ -103,9 +84,11 @@ type ChoiceGroupProps<T extends string> = {
   value: T | null;
   options: readonly [T, string][];
   onChange(value: T | null): void;
+  leading?: (value: T) => ReactNode;
+  choiceStyle?: StyleProp<ViewStyle>;
 };
 
-function ChoiceGroup<T extends string>({ title, accessibilityPrefix, value, options, onChange }: ChoiceGroupProps<T>) {
+function ChoiceGroup<T extends string>({ title, accessibilityPrefix, value, options, onChange, leading, choiceStyle }: ChoiceGroupProps<T>) {
   return (
     <FormField label={title} optional>
       <View style={styles.choiceGrid}>
@@ -116,8 +99,10 @@ function ChoiceGroup<T extends string>({ title, accessibilityPrefix, value, opti
               key={option}
               accessibilityLabel={`${accessibilityPrefix} ${label}`}
               label={label}
+              leading={leading?.(option)}
               onPress={() => onChange(selected ? null : option)}
               selected={selected}
+              style={choiceStyle}
             />
           );
         })}
@@ -131,12 +116,22 @@ export function PoopForm({
   initialPhotoPreviewUri,
   hasInitialPhoto = Boolean(initialPhotoPreviewUri),
   clientRequestId,
-  submitLabel = '完成',
+  headerSubtitle,
+  submitLabel = '保存记录',
   onSave,
   onDelete,
 }: Props) {
   const theme = useTheme();
-  const keyboardVerticalOffset = useFormKeyboardVerticalOffset();
+  const { width, fontScale } = useWindowDimensions();
+  const roomyChoices = width < 360 || fontScale > 1.3;
+  const colorSwatches: Record<PoopColor, string> = {
+    yellow: theme.observationYellow,
+    green: theme.observationGreen,
+    brown: theme.observationBrown,
+    black: theme.observationBlack,
+    red: theme.observationRed,
+    other: theme.observationOther,
+  };
   const submissionLock = useRef(createPoopSubmissionLock());
   const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
   const [color, setColor] = useState(initialInput.color);
@@ -145,7 +140,6 @@ export function PoopForm({
   const [note, setNote] = useState(initialInput.note ?? '');
   const [photoChange, setPhotoChange] = useState<PoopPhotoChange>({ kind: 'keep' });
   const [previewUri, setPreviewUri] = useState(initialPhotoPreviewUri);
-  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoMessage, setPhotoMessage] = useState<string | null>(null);
@@ -195,13 +189,6 @@ export function PoopForm({
     }
   };
 
-  const handlePickerChange = (_event: DateTimePickerChangeEvent, selectedDate: Date) => {
-    const mode = pickerMode;
-    setPickerMode(null);
-    if (!mode) return;
-    setEventTimeMs((current) => mode === 'date' ? updateDatePart(current, selectedDate) : updateTimePart(current, selectedDate));
-  };
-
   const handleSave = async () => {
     await submissionLock.current.run(async () => {
       setSaving(true);
@@ -228,30 +215,38 @@ export function PoopForm({
 
   return (
     <>
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={keyboardAvoidingBehavior()}
-      keyboardVerticalOffset={keyboardVerticalOffset}>
-      <ScrollView
-        style={{ backgroundColor: theme.background }}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}>
-        <FormField label="记录时间">
-          <View style={styles.timeRow}>
-            <Pressable accessibilityLabel="修改记录日期" accessibilityRole="button" onPress={() => setPickerMode('date')} style={[styles.timeButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText numberOfLines={2}>{formatDate(eventTimeMs)}</ThemedText>
-            </Pressable>
-            <Pressable accessibilityLabel="修改记录时间" accessibilityRole="button" onPress={() => setPickerMode('time')} style={[styles.timeButton, styles.clockButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText style={styles.clockText}>{formatTime(eventTimeMs)}</ThemedText>
-            </Pressable>
-          </View>
-          {pickerMode ? <DateTimePicker value={new Date(eventTimeMs)} mode={pickerMode} display="default" is24Hour maximumDate={pickerMode === 'date' ? new Date() : undefined} onValueChange={handlePickerChange} onDismiss={() => setPickerMode(null)} /> : null}
-        </FormField>
+      <FormScreen
+        compact
+        title="记录大便"
+        subtitle={headerSubtitle}
+        icon="poop"
+        footer={(
+          <>
+            {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
+            <AppButton accessibilityLabel="保存大便记录" label={submitLabel} loading={saving} onPress={() => { void handleSave(); }} />
+            {onDelete ? <AppButton accessibilityLabel="删除大便记录" disabled={saving} label="删除记录" onPress={onDelete} variant="destructive-ghost" /> : null}
+          </>
+        )}>
+        <RecordDateTimeField
+          label="记录时间"
+          valueMs={eventTimeMs}
+          onChange={setEventTimeMs}
+          maximumDate={new Date()}
+          dateAccessibilityLabel="修改记录日期"
+          timeAccessibilityLabel="修改记录时间"
+        />
 
-        <ChoiceGroup<PoopColor> title="颜色" accessibilityPrefix="选择大便颜色" value={color} options={colorOptions} onChange={setColor} />
-        <ChoiceGroup<PoopTexture> title="状态" accessibilityPrefix="选择大便状态" value={texture} options={textureOptions} onChange={setTexture} />
-        <ChoiceGroup<PoopAmount> title="量" accessibilityPrefix="选择大便量" value={amount} options={amountOptions} onChange={setAmount} />
+        <ChoiceGroup<PoopColor>
+          title="颜色"
+          accessibilityPrefix="选择大便颜色"
+          value={color}
+          options={colorOptions}
+          onChange={setColor}
+          choiceStyle={[styles.colorChoice, roomyChoices && styles.wideColorChoice]}
+          leading={(option) => <View accessible={false} style={[styles.swatch, { backgroundColor: colorSwatches[option] }]} />}
+        />
+        <ChoiceGroup<PoopTexture> title="状态" accessibilityPrefix="选择大便状态" value={texture} options={textureOptions} onChange={setTexture} choiceStyle={[styles.textureChoice, roomyChoices && styles.wideTextureChoice]} />
+        <ChoiceGroup<PoopAmount> title="量" accessibilityPrefix="选择大便量" value={amount} options={amountOptions} onChange={setAmount} choiceStyle={[styles.amountChoice, roomyChoices && styles.wideAmountChoice]} />
 
         <FormField label="照片" optional hint="照片仅保存在当前手机。">
           {previewUri && !photoLoadError ? (
@@ -273,9 +268,18 @@ export function PoopForm({
           ) : null}
           {photoUnavailable ? <View accessibilityLabel="照片暂时无法显示" style={[styles.unavailablePhoto, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}><ThemedText themeColor="textSecondary">照片暂时无法显示</ThemedText></View> : null}
           <View style={styles.photoActions}>
-            <AppButton accessibilityLabel="拍照" compact label="拍照" onPress={() => { void choosePhoto('camera'); }} style={styles.photoAction} variant="secondary" />
-            <AppButton accessibilityLabel="从相册选择" compact label="相册" onPress={() => { void choosePhoto('library'); }} style={styles.photoAction} variant="secondary" />
-            {(previewUri || photoUnavailable) ? <AppButton accessibilityLabel="移除照片" compact label="移除" onPress={removePhoto} style={styles.photoAction} variant="destructive" /> : null}
+            {(['camera', 'library'] as const).map((kind) => (
+              <Pressable
+                key={kind}
+                accessibilityLabel={kind === 'camera' ? '拍照' : '从相册选择'}
+                accessibilityRole="button"
+                onPress={() => { void choosePhoto(kind); }}
+                style={({ pressed }) => [styles.photoAction, { backgroundColor: theme.surface, borderColor: theme.border }, pressed && styles.pressed]}>
+                <AppIcon name={kind === 'camera' ? 'camera' : 'photo'} color={theme.primary} size={24} />
+                <ThemedText>{kind === 'camera' ? '拍照' : '相册'}</ThemedText>
+              </Pressable>
+            ))}
+            {(previewUri || photoUnavailable) ? <AppButton accessibilityLabel="移除照片" compact label="移除" onPress={removePhoto} variant="destructive-ghost" /> : null}
           </View>
           {photoMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="warning" type="small" selectable>{photoMessage}</ThemedText> : null}
         </FormField>
@@ -284,11 +288,7 @@ export function PoopForm({
           <AppTextInput accessibilityLabel="备注" maxLength={200} multiline onChangeText={setNote} placeholder="选填" value={note} />
         </FormField>
 
-        {errorMessage ? <ThemedText themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
-        <AppButton accessibilityLabel="保存大便记录" label={submitLabel} loading={saving} onPress={() => { void handleSave(); }} />
-        {onDelete ? <AppButton accessibilityLabel="删除大便记录" disabled={saving} label="删除记录" onPress={onDelete} variant="destructive" /> : null}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </FormScreen>
     <Modal animationType="fade" onRequestClose={() => setFullPhotoVisible(false)} statusBarTranslucent visible={fullPhotoVisible && Boolean(previewUri)}>
       <SafeAreaView accessibilityViewIsModal style={[styles.fullPhoto, { backgroundColor: theme.background }]}>
         <AppButton accessibilityLabel="关闭照片大图" compact label="关闭" onPress={() => setFullPhotoVisible(false)} style={styles.closePhoto} variant="secondary" />
@@ -308,13 +308,14 @@ export function PoopForm({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: 160, gap: Spacing.xl },
-  timeRow: { flexDirection: 'row', gap: Spacing.sm },
-  timeButton: { flex: 1, minWidth: 0, minHeight: 52, borderWidth: 1, borderRadius: Radius.card, paddingHorizontal: Spacing.md, justifyContent: 'center' },
-  clockButton: { flexBasis: 120, flexGrow: 0, flexShrink: 0, width: 120, alignItems: 'center' },
-  clockText: { fontVariant: ['tabular-nums'] },
   choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  colorChoice: { flexBasis: '30%', flexGrow: 1, minWidth: 96, paddingHorizontal: Spacing.sm },
+  wideColorChoice: { flexBasis: '45%', minWidth: 120 },
+  textureChoice: { flexBasis: 56, flexGrow: 1, paddingHorizontal: Spacing.xs },
+  wideTextureChoice: { minWidth: 100 },
+  amountChoice: { flexBasis: '30%', flexGrow: 1, minWidth: 80 },
+  wideAmountChoice: { minWidth: 112 },
+  swatch: { width: 22, height: 22, borderRadius: 11, flexShrink: 0 },
   photoPreview: { width: '100%', aspectRatio: 4 / 3, maxHeight: 360, borderRadius: Radius.card },
   previewImage: { width: '100%', height: '100%', borderRadius: Radius.card },
   fullPhoto: { flex: 1, padding: Spacing.lg, gap: Spacing.md },
@@ -322,6 +323,6 @@ const styles = StyleSheet.create({
   fullPhotoImage: { flex: 1, width: '100%' },
   unavailablePhoto: { minHeight: 160, borderWidth: 1, borderStyle: 'dashed', borderRadius: Radius.card, alignItems: 'center', justifyContent: 'center', padding: Spacing.lg },
   photoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  photoAction: { minWidth: 96, flexGrow: 1 },
+  photoAction: { flexBasis: '45%', flexGrow: 1, minHeight: 48, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, borderWidth: 1, borderRadius: Radius.control },
   pressed: { opacity: 0.7 },
 });

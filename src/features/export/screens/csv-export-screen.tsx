@@ -6,6 +6,7 @@ import { useAppState } from '@/application/app-state/app-state-provider';
 import type { ExportCsvResult } from '@/application/export/export-csv-service';
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
+import { AppIcon } from '@/components/ui/app-icon';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ScreenContainer } from '@/components/ui/screen-container';
@@ -76,8 +77,11 @@ export function CsvExportScreen() {
 
   return (
     <>
-      <ScreenContainer>
-        <ThemedText style={styles.title} selectable>导出 CSV</ThemedText>
+      <ScreenContainer contentStyle={styles.content}>
+        <View style={styles.heading}>
+          <ThemedText style={styles.title} selectable>导出 CSV</ThemedText>
+          <AppIcon name="export" color={theme.pee} size={32} />
+        </View>
         <ThemedText type="small" themeColor="textSecondary" selectable>
           CSV适合查看和分享，不包含大便照片，也不能用于完整恢复App数据。
         </ThemedText>
@@ -136,7 +140,9 @@ export function CsvExportScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { ...Typography.sectionTitle },
+  content: { maxWidth: 560, gap: Spacing.xxl },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  title: { ...Typography.pageTitle, flex: 1 },
   section: { gap: Spacing.sm },
   sectionTitle: { ...Typography.sectionTitle },
   rangeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
