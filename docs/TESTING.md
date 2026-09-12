@@ -2,7 +2,7 @@
 
 ## 自动化基线
 
-当前 Android 1.0.1 源码基线包含 97 个 Jest test suites、573 个测试，以及独立的 SQLite schema 检查。当前数据合同为 SQLite `user_version=9`；完整备份新建时写入 `formatVersion=2`，可恢复历史 `formatVersion=1` 和当前 `formatVersion=2`；CSV 固定 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`；喝奶方式为奶粉、亲喂母乳、瓶喂母乳和混合。公共导出需要在干净目录重新安装依赖并复跑全部检查，不能复用私有工作目录中的缓存或忽略文件。
+当前 Android 1.1.0 / code 5 源码基线包含 97 个 Jest test suites、573 个测试，以及独立的 SQLite schema 检查。当前数据合同为 SQLite `user_version=9`；完整备份新建时写入 `formatVersion=2`，可恢复历史 `formatVersion=1` 和当前 `formatVersion=2`；CSV 固定 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`；喝奶方式为奶粉、亲喂母乳、瓶喂母乳和混合。公共导出需要在干净目录重新安装依赖并复跑全部检查，不能复用私有工作目录中的缓存或忽略文件。
 
 常用命令：
 
@@ -21,12 +21,16 @@ npx expo export --platform android --output-dir dist
 
 2026-09-09 在公开源码的干净目录执行 `npm ci` 后，97组573项测试、schema9、typecheck、lint、6张品牌素材、12张UI素材、Expo public config和Android export均通过。公开配置不包含私有Expo/EAS项目关联；Android导出包含1631模块及65个素材，其中包含全部12张UI PNG。
 
-最新 Expo Doctor 为 **19/21，两项未通过**：
+2026-09-12 为 Android 新版安装升级到 `expo@57.0.22`、`react-native@0.86.3`、Hermes compiler `250829098.0.17`、Reanimated `4.5.1` 和 Worklets `0.10.1`，并对齐 SDK 57 相关依赖。最新 Expo Doctor **21/21 通过**，`expo install --check` 确认版本匹配；573项测试、schema9、typecheck、lint、两套素材检查、公开配置、Android生产导出和Windows构建脚本测试均通过。`@react-native/jest-preset` 显式固定为 `0.86.3`，与 React Native 的精确 peer 要求一致。
 
-- Hermes V1：当前 `expo@57.0.4` / `react-native@0.86.0` 使用受已知内存回归影响的Hermes版本。官方说明在 `expo@57.0.9` / React Native 0.86.2及后续版本修复；后续补丁还修复了开发启动变慢的问题，见 [SDK57已知回归](https://expo.dev/changelog/sdk-57#known-regressions)。本项目依赖Reanimated/Worklets，不将该提醒当作无关警告。
+2026-09-09 源码预览时 Expo Doctor 为 **19/21，两项未通过**，以下问题已由上述补丁升级解决：
+
+- Hermes V1：当时的 `expo@57.0.4` / `react-native@0.86.0` 使用受已知内存回归影响的Hermes版本。官方说明在 `expo@57.0.9` / React Native 0.86.2及后续版本修复；后续补丁还修复了开发启动变慢的问题，见 [SDK57已知回归](https://expo.dev/changelog/sdk-57#known-regressions)。
 - 依赖匹配：29个包落后于SDK57当前建议值，其中 `react-native-screens` 为minor差异，其他为patch差异。
 
-这些问题来自未变更的基础依赖，不是本轮新增的UI依赖；本次源码同步没有升级或忽略它们。本轮发布标记为源码预览版，不能据此声明可发布正式安装包。正式构建前需升级匹配的Expo/React Native及相关依赖、重建development build，并复验数据、键盘、导航及真机行为。2026-08-07 的19/20仅为历史检查记录。
+2026-09-12 在公开仓重新执行 `npm ci` 后，97组573项测试、schema9、typecheck、lint、两套素材检查、Expo Doctor 21/21、公开配置和Android export通过。首次并行检查中有一项设置页测试触及默认5秒超时；随后单独复查该组9项测试，并在其他检查结束后重跑完整573项，均通过，没有放宽超时或改动测试。公开源码和签名构建所用的运行文件与依赖一致，素材清单仅保留公开来源说明。
+
+安装包通过 `v1.1.0` Release 提供；`ui-soft-rose-2026-09-09` 标签保留当时的源码预览。2026-08-07 的19/20仅为历史检查记录。
 
 ## 各检查的职责
 
@@ -43,6 +47,8 @@ npx expo export --platform android --output-dir dist
 `test:schema` 使用宿主 SQLite，不冒充 Android 原生集成测试。涉及 `expo-sqlite` 原生能力、文件系统、系统分享、相机/相册、通知和主题的行为仍需在 Android development build 上验证。
 
 ## Android 验证摘要
+
+2026-09-12 的 `1.1.0 / code 5` 正式签名 APK/AAB 构建成功。在已连接的 Android 14 真机执行 code 4→5 覆盖安装，核对包名、版本、签名、原首次安装时间和数据目录标识；宝宝资料、提醒及主题设置仍然显示。检查首页、记录、设置、喝奶表单、键盘弹出与返回，并冷启动复查；安装后 crash buffer 未发现本应用新增崩溃。此次未写入测试记录、替换数据或执行备份恢复，也没有对整库和照片做字节比较，不替代完整产品回归。
 
 2026-09-09 淡桃粉 UI 已完成API 36模拟器七页浅深色、输入保存、返回与前后台、部分小屏和大字状态走查；本次未新构建APK/AAB或完成新的真机覆盖升级。Android 普通展示文字关闭长按选择以规避原生崩溃，输入框保留手动编辑与选择；喂养数值框关闭Android聚焦自动全选以避免首位数字被覆盖。下列真机记录仅属于改版前的功能基线。
 

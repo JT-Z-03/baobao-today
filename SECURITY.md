@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-当前安全维护范围是 Android `1.0.x` 源码，当前公共源码版本为 `1.0.1`（`versionCode=4`）。iOS 尚未开始，Web 也未完成产品验收。第一阶段公共仓库不发布 APK 或 AAB。
+当前维护版本为 Android `1.1.0`（`versionCode=5`），源码和维护者签名的 APK 均通过本仓库及 GitHub Releases 提供。iOS 尚未开始，Web 也未完成产品验收。
 
 ## 报告安全问题
 
