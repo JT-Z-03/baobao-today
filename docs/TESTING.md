@@ -2,7 +2,7 @@
 
 ## 自动化基线
 
-当前 Android 1.1.0 / code 5 源码基线包含 97 个 Jest test suites、573 个测试，以及独立的 SQLite schema 检查。当前数据合同为 SQLite `user_version=9`；完整备份新建时写入 `formatVersion=2`，可恢复历史 `formatVersion=1` 和当前 `formatVersion=2`；CSV 固定 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`；喝奶方式为奶粉、亲喂母乳、瓶喂母乳和混合。公共导出需要在干净目录重新安装依赖并复跑全部检查，不能复用私有工作目录中的缓存或忽略文件。
+当前 Android 1.1.1 / code 6 源码基线包含 97 个 Jest test suites、574 个测试，以及独立的 SQLite schema 检查。当前数据合同为 SQLite `user_version=9`；完整备份新建时写入 `formatVersion=2`，可恢复历史 `formatVersion=1` 和当前 `formatVersion=2`；CSV 固定 33 列，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`；喝奶方式为奶粉、亲喂母乳、瓶喂母乳和混合。公共导出需要在干净目录重新安装依赖并复跑全部检查，不能复用私有工作目录中的缓存或忽略文件。
 
 常用命令：
 
@@ -30,7 +30,9 @@ npx expo export --platform android --output-dir dist
 
 2026-09-12 在公开仓重新执行 `npm ci` 后，97组573项测试、schema9、typecheck、lint、两套素材检查、Expo Doctor 21/21、公开配置和Android export通过。首次并行检查中有一项设置页测试触及默认5秒超时；随后单独复查该组9项测试，并在其他检查结束后重跑完整573项，均通过，没有放宽超时或改动测试。公开源码和签名构建所用的运行文件与依赖一致，素材清单仅保留公开来源说明。
 
-安装包通过 `v1.1.0` Release 提供；`ui-soft-rose-2026-09-09` 标签保留当时的源码预览。2026-08-07 的19/20仅为历史检查记录。
+1.1.1 的小便表单回归覆盖：新增和编辑时直接显示选填字段、只记时间保存、填写及取消选择、旧记录回显和保存防重入。修复先以同签名测试包覆盖安装到 Android 14 手机，由使用者确认测试无问题；正式发布调整为 `1.1.1 / code 6`，功能源码与该测试包一致。这不代表对正式版本包重新开展全部真机回归。
+
+最新安装包通过 `v1.1.1` Release 提供；`v1.1.0` 及 `ui-soft-rose-2026-09-09` 标签保留历史版本。2026-08-07 的19/20仅为历史检查记录。
 
 ## 各检查的职责
 

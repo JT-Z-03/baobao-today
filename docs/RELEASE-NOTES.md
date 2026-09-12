@@ -1,5 +1,15 @@
 # 更新记录
 
+## 2026-09-12 · 1.1.1 / code 6
+
+[下载 Android 安装包](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.1/baobao-today-1.1.1-code6.apk) · [发布页与 SHA-256 校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.1)
+
+- 小便记录页移除“更多信息”折叠入口，打开即可填写尿量、颜色和备注，与大便记录页一致。
+- 三项仍为选填，只记时间也能保存；已有记录可正常编辑，已选项目可再次点击取消。
+- 沿用原包名和正式签名，支持覆盖升级；已有用户无需卸载。
+
+修复已通过使用者在 Android 14 手机上的测试。正式发布包更新版本号和版本代码，功能源码沿用测试通过的版本。验证范围见 [测试说明](TESTING.md)。本次不调整依赖、SQLite schema9、备份格式或CSV33列。
+
 ## 2026-09-12 · 1.1.0 / code 5
 
 [下载 Android 安装包](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.0/baobao-today-1.1.0-code5.apk) · [发布页与 SHA-256 校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.0)

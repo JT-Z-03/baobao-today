@@ -10,28 +10,29 @@ const initialInput = {
 };
 
 describe('PeeForm', () => {
-  test('starts collapsed and saves a time-only record', async () => {
+  test.each(['stable-request', null])('shows optional fields immediately and saves time-only input (request: %s)', async (clientRequestId) => {
     const onSave = jest.fn(async () => undefined);
     const screen = await render(
-      <PeeForm initialInput={initialInput} clientRequestId="stable-request" onSave={onSave} />,
+      <PeeForm initialInput={initialInput} clientRequestId={clientRequestId} onSave={onSave} />,
     );
-    expect(screen.queryByLabelText('选择尿量 少')).toBeNull();
+    expect(screen.getByLabelText('选择尿量 少')).toBeVisible();
+    expect(screen.getByLabelText('选择尿液颜色 淡黄')).toBeVisible();
+    expect(screen.getByLabelText('备注')).toBeVisible();
+    expect(screen.queryByText('更多信息')).toBeNull();
+    expect(screen.queryByLabelText(/展开更多信息|收起更多信息/)).toBeNull();
     await fireEvent.press(screen.getByLabelText('保存小便记录'));
-    expect(onSave).toHaveBeenCalledWith(initialInput, 'stable-request');
+    expect(onSave).toHaveBeenCalledWith(initialInput, clientRequestId);
   });
 
-  test('keeps expanded values when collapsed and allows clearing selections', async () => {
+  test('allows selecting and clearing optional values directly', async () => {
     const onSave = jest.fn(async () => undefined);
     const screen = await render(
       <PeeForm initialInput={initialInput} clientRequestId="stable-request" onSave={onSave} />,
     );
-    await fireEvent.press(screen.getByLabelText('展开更多信息'));
     await fireEvent.press(screen.getByLabelText('选择尿量 中'));
     await fireEvent.press(screen.getByLabelText('选择尿液颜色 淡黄'));
     expect(screen.getByLabelText('选择尿量 中').props.accessibilityState.selected).toBe(true);
-    await fireEvent.press(screen.getByLabelText('收起更多信息'));
-    await fireEvent.press(screen.getByLabelText('展开更多信息'));
-    expect(screen.getByLabelText('选择尿量 中').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText('选择尿液颜色 淡黄').props.accessibilityState.selected).toBe(true);
     await fireEvent.press(screen.getByLabelText('选择尿量 中'));
     await fireEvent.press(screen.getByLabelText('选择尿液颜色 淡黄'));
     await fireEvent.press(screen.getByLabelText('保存小便记录'));
@@ -50,16 +51,14 @@ describe('PeeForm', () => {
     await expect(firstRun).resolves.toBe(true);
   });
 
-  test('saves filled optional values directly from the collapsed form', async () => {
+  test('saves optional values without an extra expansion step', async () => {
     const onSave = jest.fn(async () => undefined);
     const screen = await render(
       <PeeForm initialInput={initialInput} clientRequestId="stable-request" onSave={onSave} />,
     );
-    await fireEvent.press(screen.getByLabelText('展开更多信息'));
     await fireEvent.press(screen.getByLabelText('选择尿量 中'));
     await fireEvent.press(screen.getByLabelText('选择尿液颜色 淡黄'));
     await fireEvent.changeText(screen.getByLabelText('备注'), '换尿布时记录');
-    await fireEvent.press(screen.getByLabelText('收起更多信息'));
     await fireEvent.press(screen.getByLabelText('保存小便记录'));
     expect(onSave).toHaveBeenCalledWith({
       ...initialInput, amount: 'medium', color: 'light_yellow', note: '换尿布时记录',
