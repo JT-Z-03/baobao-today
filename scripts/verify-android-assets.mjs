@@ -20,7 +20,7 @@ const { expo } = appJson;
 
 assert.equal(expo.name, '宝宝今天');
 assert.equal(expo.slug, 'baobao-today');
-assert.equal(expo.version, '1.0.1');
+assert.equal(expo.version, '1.1.0');
 assert.equal(expo.scheme, 'baobaotoday');
 assert.equal(expo.icon, './assets/images/icon.png');
 assert.equal(expo.owner, undefined, 'Public app config must not contain a private Expo owner.');
@@ -29,7 +29,7 @@ assert.equal(expo.ios?.icon, undefined, 'Public app config must not reference th
 assert.equal(expo.web?.favicon, './assets/images/icon.png');
 
 assert.equal(expo.android?.package, 'com.baobaotoday.app');
-assert.equal(expo.android?.versionCode, 4);
+assert.equal(expo.android?.versionCode, 5);
 assert.deepEqual(expo.android?.blockedPermissions, [
   'android.permission.READ_EXTERNAL_STORAGE',
   'android.permission.WRITE_EXTERNAL_STORAGE',

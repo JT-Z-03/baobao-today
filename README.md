@@ -4,18 +4,28 @@
 
 A privacy-first, local-first newborn care tracking app, currently implemented and validated for Android.
 
-Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼容性修复。iOS 仍在计划中，尚未开始构建或验收。第一阶段公共仓库只提供源码，不提供 APK 或 AAB。
+Android 版现已提供安装包，支持 Android 7.0 及以上。iOS 仍在计划中，尚未开始构建或验收。
+
+## 下载与安装
+
+**[下载宝宝今天 1.1.0 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.0/baobao-today-1.1.0-code5.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.0)
+
+1. 在 Android 手机上下载上面的 `.apk` 文件，打开并按系统提示安装。若系统询问，允许当前浏览器或文件管理器安装此应用。
+2. 已安装旧版的用户可直接覆盖升级；不要先卸载，以免删除手机中的本地记录。
+3. 安装后直接使用，无需注册账号。宝宝资料、记录和照片保存在当前手机，可在设置中创建完整备份。
+
+GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.1.0 / code 5`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
 
 ## 当前源码状态
 
-- Current source version: Android 1.0.1 / versionCode 4
+- Current source version: Android 1.1.0 / versionCode 5
 - API 36 edge-to-edge safe-area fix included
 - Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
-- 2026-09-09 soft-rose UI: implemented and checked on an API 36 emulator; this UI revision has not undergone a new physical-device release acceptance
+- Soft-rose UI: API 36 emulator checks and a 2026-09-12 Android 14 same-signature code 4→5 installation with launch, navigation, profile and keyboard smoke checks; the latter is not a full product regression
 - iOS has not been built or tested
-- No APK/AAB is published in this repository
+- Signed Android APK and SHA-256 checksum are available in GitHub Releases; binaries are not committed to Git history
 
-本次淡桃粉更新以源码预览版发布。最新Expo Doctor为19/21，当前基础依赖有已知Hermes内存回归及版本匹配提醒；正式构建前需升级并重新验收，见 [测试说明](docs/TESTING.md)。
+本次安装包已升级 SDK 57 相关依赖，解决此前源码预览的 Hermes 已知回归与版本匹配问题。Expo Doctor 21/21及573项测试通过，验证范围见 [测试说明](docs/TESTING.md)。
 
 ## 功能
 
@@ -50,11 +60,11 @@ Android 功能基线已经完成，当前公共源码包含 API 36 安全区兼�
 
 ## 技术栈
 
-- Expo SDK 57.0.4
-- React Native 0.86.0 / React 19.2.3
-- TypeScript 6.0.3 / Expo Router 57.0.4
-- Expo SQLite 57.0.0
-- Jest 29.7.0 / jest-expo 57.0.1
+- Expo SDK 57.0.22
+- React Native 0.86.3 / React 19.2.3
+- TypeScript 6.0.3 / Expo Router 57.0.21
+- Expo SQLite 57.0.3
+- Jest 29.7.0 / jest-expo 57.0.5
 
 依赖的精确版本以 `package-lock.json` 为准。Expo SDK 57 的版本化文档见 [Expo SDK 57 文档](https://docs.expo.dev/versions/v57.0.0/)。
 
@@ -134,7 +144,7 @@ npx expo export --platform android --output-dir dist
 
 `npm run android` 使用 Expo 的本地 Android 工具链生成并编译 development build。普通开发构建不需要 release keystore，也不需要仓库外的签名配置。生成的 `android/`、Gradle 缓存和构建产物均被忽略，不应提交。
 
-本仓库不提供正式签名、APK/AAB 发布或应用商店上架流程。第一阶段也不会把 APK/AAB 提交到 Git。
+维护者签名的 APK 通过 GitHub Releases 提供；签名密钥和本地构建配置不公开，APK/AAB 不提交到 Git。应用商店上架不在当前发布范围内。
 
 ## 当前限制
 
@@ -144,13 +154,13 @@ npx expo export --platform android --output-dir dist
 - CSV 不包含照片，不能用于完整恢复。
 - ZIP 备份未加密；系统分享后的文件处理由用户选择的应用负责。
 - 不提供账号恢复、云端恢复或远程数据删除能力。
-- 第一阶段公共仓库不提供 APK/AAB。
+- 当前通过 GitHub Releases 提供 Android APK，尚未通过应用商店分发。
 
 ## 路线图
 
-1. 收集 Android 1.0.1 源码的公开反馈并进行必要维护。
+1. 收集 Android 安装包和源码的公开反馈并进行必要维护。
 2. 单独规划和实施 iOS 构建、设备验证与发布准备。
-3. 另行决定是否通过 GitHub Releases 提供正式 Android APK；AAB 不提交源码仓库。
+3. 持续维护 GitHub Releases 的 Android APK、版本说明和校验文件。
 
 ## AI 辅助开发说明
 

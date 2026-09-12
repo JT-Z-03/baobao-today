@@ -2,7 +2,7 @@
   "expo": {
     "name": "宝宝今天",
     "slug": "baobao-today",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "baobaotoday",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.baobaotoday.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
