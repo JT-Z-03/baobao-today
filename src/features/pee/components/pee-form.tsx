@@ -1,6 +1,5 @@
 import { type ReactNode, useRef, useState } from 'react';
 import {
-  Pressable,
   StyleSheet,
   View,
   useWindowDimensions,
@@ -101,9 +100,6 @@ export function PeeForm({
   const [amount, setAmount] = useState(initialInput.amount);
   const [color, setColor] = useState(initialInput.color);
   const [note, setNote] = useState(initialInput.note ?? '');
-  const [expanded, setExpanded] = useState(
-    initialInput.amount !== null || initialInput.color !== null || initialInput.note !== null,
-  );
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -146,55 +142,35 @@ export function PeeForm({
           <ThemedText themeColor="textSecondary" type="small">只记时间，也可以保存</ThemedText>
         </View>
 
-        <Pressable
-          accessibilityLabel={expanded ? '收起更多信息' : '展开更多信息'}
-          accessibilityRole="button"
-          accessibilityState={{ expanded }}
-          onPress={() => setExpanded((value) => !value)}
-          style={({ pressed }) => [
-            styles.moreButton,
-            pressed && styles.pressed,
-          ]}>
-          <View style={styles.moreLabel}>
-            <ThemedText type="subtitle">更多信息</ThemedText>
-            <ThemedText themeColor="textSecondary" type="small">选填</ThemedText>
-          </View>
-          <ThemedText themeColor="textSecondary">{expanded ? '收起' : '展开'}</ThemedText>
-        </Pressable>
-
-        {expanded ? (
-          <View style={styles.moreFields}>
-            <ChoiceGroup<PeeAmount>
-              title="尿量"
-              accessibilityPrefix="选择尿量"
-              value={amount}
-              options={amountOptions}
-              onChange={setAmount}
-              choiceStyle={[styles.amountChoice, fontScale > 1.3 && styles.wideAmountChoice]}
-            />
-            <ChoiceGroup<PeeColor>
-              title="颜色"
-              accessibilityPrefix="选择尿液颜色"
-              value={color}
-              options={colorOptions}
-              onChange={setColor}
-              choiceStyle={styles.colorChoice}
-              leading={(option) => (
-                <View accessible={false} style={[styles.swatch, { backgroundColor: colorSwatches[option], borderColor: theme.border }, option === 'clear' && styles.clearSwatch]} />
-              )}
-            />
-            <FormField label="备注" optional>
-              <AppTextInput
-                accessibilityLabel="备注"
-                maxLength={200}
-                multiline
-                onChangeText={setNote}
-                placeholder="选填"
-                value={note}
-              />
-            </FormField>
-          </View>
-        ) : null}
+        <ChoiceGroup<PeeAmount>
+          title="尿量"
+          accessibilityPrefix="选择尿量"
+          value={amount}
+          options={amountOptions}
+          onChange={setAmount}
+          choiceStyle={[styles.amountChoice, fontScale > 1.3 && styles.wideAmountChoice]}
+        />
+        <ChoiceGroup<PeeColor>
+          title="颜色"
+          accessibilityPrefix="选择尿液颜色"
+          value={color}
+          options={colorOptions}
+          onChange={setColor}
+          choiceStyle={styles.colorChoice}
+          leading={(option) => (
+            <View accessible={false} style={[styles.swatch, { backgroundColor: colorSwatches[option], borderColor: theme.border }, option === 'clear' && styles.clearSwatch]} />
+          )}
+        />
+        <FormField label="备注" optional>
+          <AppTextInput
+            accessibilityLabel="备注"
+            maxLength={200}
+            multiline
+            onChangeText={setNote}
+            placeholder="选填"
+            value={note}
+          />
+        </FormField>
 
     </FormScreen>
   );
@@ -202,14 +178,10 @@ export function PeeForm({
 
 const styles = StyleSheet.create({
   timeSection: { gap: Spacing.sm },
-  moreButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
-  moreLabel: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', flex: 1, gap: Spacing.sm },
-  moreFields: { gap: Spacing.lg },
   choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   amountChoice: { flexBasis: '30%', flexGrow: 1, minWidth: 80 },
   wideAmountChoice: { minWidth: 112 },
   colorChoice: { flexBasis: '45%', flexGrow: 1, minWidth: 120 },
   swatch: { width: 26, height: 26, borderRadius: 13, flexShrink: 0 },
   clearSwatch: { borderWidth: 1 },
-  pressed: { opacity: 0.7 },
 });

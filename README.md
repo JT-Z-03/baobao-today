@@ -8,24 +8,25 @@ Android 版现已提供安装包，支持 Android 7.0 及以上。iOS 仍在计�
 
 ## 下载与安装
 
-**[下载宝宝今天 1.1.0 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.0/baobao-today-1.1.0-code5.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.0)
+**[下载宝宝今天 1.1.1 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.1/baobao-today-1.1.1-code6.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.1)
 
 1. 在 Android 手机上下载上面的 `.apk` 文件，打开并按系统提示安装。若系统询问，允许当前浏览器或文件管理器安装此应用。
 2. 已安装旧版的用户可直接覆盖升级；不要先卸载，以免删除手机中的本地记录。
 3. 安装后直接使用，无需注册账号。宝宝资料、记录和照片保存在当前手机，可在设置中创建完整备份。
 
-GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.1.0 / code 5`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
+GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.1.1 / code 6`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
 
 ## 当前源码状态
 
-- Current source version: Android 1.1.0 / versionCode 5
+- Current source version: Android 1.1.1 / versionCode 6
+- 小便记录页直接展示尿量、颜色和备注，均为选填；取消“更多信息”的展开步骤，与大便记录页一致。
 - API 36 edge-to-edge safe-area fix included
 - Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
 - Soft-rose UI: API 36 emulator checks and a 2026-09-12 Android 14 same-signature code 4→5 installation with launch, navigation, profile and keyboard smoke checks; the latter is not a full product regression
 - iOS has not been built or tested
 - Signed Android APK and SHA-256 checksum are available in GitHub Releases; binaries are not committed to Git history
 
-本次安装包已升级 SDK 57 相关依赖，解决此前源码预览的 Hermes 已知回归与版本匹配问题。Expo Doctor 21/21及573项测试通过，验证范围见 [测试说明](docs/TESTING.md)。
+安装包沿用已对齐的 SDK 57 依赖，包含此前 Hermes 已知回归与版本匹配问题的修复。Expo Doctor 21/21及574项测试通过，验证范围见 [测试说明](docs/TESTING.md)。
 
 ## 功能
 
