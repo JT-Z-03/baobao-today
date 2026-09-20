@@ -1,6 +1,7 @@
+import { useDraftField, useRecordDraftContext } from '@/features/records/hooks/use-record-draft';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -19,7 +20,7 @@ import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
 import { FormScreen } from '@/components/ui/form-screen';
-import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
+import { RecordDateTimeField, RecordDateHint } from '@/components/ui/record-date-time-field';
 import { Radius, Spacing } from '@/constants/theme';
 import type {
   LocalPhotoSource,
@@ -133,33 +134,40 @@ export function PoopForm({
     other: theme.observationOther,
   };
   const submissionLock = useRef(createPoopSubmissionLock());
-  const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
-  const [color, setColor] = useState(initialInput.color);
-  const [texture, setTexture] = useState(initialInput.texture);
-  const [amount, setAmount] = useState(initialInput.amount);
-  const [note, setNote] = useState(initialInput.note ?? '');
-  const [photoChange, setPhotoChange] = useState<PoopPhotoChange>({ kind: 'keep' });
-  const [previewUri, setPreviewUri] = useState(initialPhotoPreviewUri);
+  const [eventTimeMs, setEventTimeMs] = useDraftField('eventTimeMs', initialInput.eventTimeMs);
+  const [color, setColor] = useDraftField('color', initialInput.color);
+  const [texture, setTexture] = useDraftField('texture', initialInput.texture);
+  const [amount, setAmount] = useDraftField('amount', initialInput.amount);
+  const [note, setNote] = useDraftField('note', initialInput.note ?? '');
+  const [photoChange, setPhotoChange] = useDraftField<PoopPhotoChange>('photoChange', { kind: 'keep' });
+  const [previewUri, setPreviewUri] = useDraftField('previewUri', initialPhotoPreviewUri);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [photoMessage, setPhotoMessage] = useState<string | null>(null);
   const [photoLoadError, setPhotoLoadError] = useState(false);
   const [fullPhotoVisible, setFullPhotoVisible] = useState(false);
 
-  const applyPhoto = (source: LocalPhotoSource | null) => {
+  const draftContext = useRecordDraftContext();
+  const photoRequest = useRef(0);
+  const applyPhoto = async (source: LocalPhotoSource | null) => {
     if (!source) return;
+    const request = ++photoRequest.current;
+    try { source = await (draftContext?.photo(source) ?? Promise.resolve(source)); }
+    catch { if (request === photoRequest.current) setPhotoMessage('照片保存到草稿失败，请重试，原照片未改变。'); return; }
+    if (request !== photoRequest.current) return;
     setPhotoChange({ kind: 'replace', source });
     setPreviewUri(source.uri);
     setPhotoLoadError(false);
     setPhotoMessage(null);
   };
 
+  const resumePhoto = useEffectEvent(applyPhoto);
   useEffect(() => {
     let active = true;
     ImagePicker.getPendingResultAsync()
       .then((result) => {
         if (!active || !result || 'code' in result) return;
-        applyPhoto(sourceFromResult(result));
+        void resumePhoto(sourceFromResult(result));
       })
       .catch(() => undefined);
     return () => { active = false; };
@@ -204,6 +212,7 @@ export function PoopForm({
   };
 
   const removePhoto = () => {
+    photoRequest.current++; draftContext?.cancelPhoto();
     setFullPhotoVisible(false);
     setPreviewUri(null);
     setPhotoLoadError(false);
@@ -221,14 +230,15 @@ export function PoopForm({
         subtitle={headerSubtitle}
         icon="poop"
         footer={(
-          <>
+        <>
+          <RecordDateHint valueMs={eventTimeMs} />
             {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
             <AppButton accessibilityLabel="保存大便记录" label={submitLabel} loading={saving} onPress={() => { void handleSave(); }} />
             {onDelete ? <AppButton accessibilityLabel="删除大便记录" disabled={saving} label="删除记录" onPress={onDelete} variant="destructive-ghost" /> : null}
           </>
         )}>
         <RecordDateTimeField
-          label="记录时间"
+          label="发生时间"
           valueMs={eventTimeMs}
           onChange={setEventTimeMs}
           maximumDate={new Date()}
@@ -281,7 +291,7 @@ export function PoopForm({
             ))}
             {(previewUri || photoUnavailable) ? <AppButton accessibilityLabel="移除照片" compact label="移除" onPress={removePhoto} variant="destructive-ghost" /> : null}
           </View>
-          {photoMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="warning" type="small" selectable>{photoMessage}</ThemedText> : null}
+          {photoMessage ? <><ThemedText accessibilityLiveRegion="polite" themeColor="warning" type="small" selectable>{photoMessage}</ThemedText><AppButton label="放弃这次照片，继续填写" variant="secondary" onPress={() => { photoRequest.current++; draftContext?.cancelPhoto(); setPhotoMessage(null); }} /></> : null}
         </FormField>
 
         <FormField label="备注" optional>

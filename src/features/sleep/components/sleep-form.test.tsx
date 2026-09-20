@@ -36,7 +36,7 @@ describe('sleep form submission lock', () => {
     expect(screen.getByLabelText('修改结束时间')).toBeTruthy();
     expect(screen.queryByLabelText('保存睡眠修改')).toBeNull();
     await act(async () => { fireEvent.press(screen.getByLabelText('确认结束睡眠')); });
-    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(nowMs));
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(nowMs, { startMs, note: null }));
   });
 
   test('cancel finish keeps the active sleep and unsaved note unchanged', async () => {

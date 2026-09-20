@@ -1,3 +1,5 @@
+import { discardDeletedDraft } from '@/features/records/discard-deleted-draft';
+import { RecordDraftBoundary } from '@/features/records/components/record-draft-boundary';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 
@@ -7,19 +9,21 @@ import { FormScreenState } from '@/components/ui/form-screen-state';
 import { calculateBirthDayNumber } from '@/domain/baby/baby-profile';
 import { toLocalDateKey } from '@/domain/date/local-date';
 import type { FeedingCreateInput } from '@/domain/feeding/feeding';
-import { FeedingForm } from '@/features/feeding/components/feeding-form';
+import { FeedingForm, type FeedingFormInput, type FeedingHistoryAmounts } from '@/features/feeding/components/feeding-form';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
 
 type Props = { recordId?: string };
 
 export function FeedingFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { babyProfile, feedingService } = useAppState();
+  const { babyProfile, feedingService, draftService } = useAppState();
   const [todayDate] = useState(() => toLocalDateKey(Date.now()));
   const [clientRequestId] = useState(() =>
     recordId ? null : (feedingService?.createClientRequestId() ?? null),
   );
-  const [initialInput, setInitialInput] = useState<FeedingCreateInput | null>(null);
+  const [initialInput, setInitialInput] = useState<FeedingFormInput | null>(null);
+  const [historyAmounts, setHistoryAmounts] = useState<FeedingHistoryAmounts>();
+  const [initialComponents, setInitialComponents] = useState<import('@/domain/feeding/feeding').FeedingComponent[]>();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteVisible, setDeleteVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -42,7 +46,9 @@ export function FeedingFormScreen({ recordId }: Props) {
             note: record.note,
           } satisfies FeedingCreateInput;
         })
-      : feedingService.getNewRecordDefaults().then((defaults) => ({
+      : feedingService.getNewRecordDefaults().then((defaults) => {
+          if (active) { setHistoryAmounts(defaults.historyAmounts); setInitialComponents(defaults.initialComponents); }
+          return ({
           eventTimeMs: defaults.eventTimeMs,
           feedingType: defaults.feedingType,
           milkAmountMl: defaults.milkAmountMl,
@@ -50,7 +56,7 @@ export function FeedingFormScreen({ recordId }: Props) {
           leftDurationMin: defaults.feedingType === 'breast' || defaults.feedingType === 'mixed' ? 0 : null,
           rightDurationMin: defaults.feedingType === 'breast' || defaults.feedingType === 'mixed' ? 0 : null,
           note: null,
-        }) satisfies FeedingCreateInput);
+        }) satisfies FeedingFormInput; });
 
     load
       .then((input) => {
@@ -79,9 +85,8 @@ export function FeedingFormScreen({ recordId }: Props) {
       setReminderWarning(recordId
         ? '记录已更新，但提醒更新失败。请稍后在设置中重试。'
         : '记录已保存，但提醒更新失败。请稍后在设置中重试。');
-      return;
+      return { stayOnPage: true };
     }
-    router.back();
   };
 
   const handleDelete = recordId ? () => { setDeleteError(null); setDeleteVisible(true); } : undefined;
@@ -91,6 +96,7 @@ export function FeedingFormScreen({ recordId }: Props) {
     setDeleteError(null);
     try {
       const { reminderStatus } = await feedingService.delete(recordId);
+      await discardDeletedDraft(draftService, babyProfile?.id, 'feeding', recordId);
       setDeleteVisible(false);
       if (reminderStatus?.kind === 'sync-error') {
         setReminderWarning('记录已删除，但提醒更新失败。请稍后在设置中重试。');
@@ -106,14 +112,18 @@ export function FeedingFormScreen({ recordId }: Props) {
 
   return (
     <>
+      <RecordDraftBoundary kind="feeding" recordId={recordId}>
       <FeedingForm
         headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, todayDate)} 天` : undefined}
         initialInput={initialInput}
+        historyAmounts={historyAmounts}
+        initialComponents={initialComponents}
         clientRequestId={clientRequestId}
         submitLabel={recordId ? '保存修改' : '保存记录'}
         onSave={handleSave}
         onDelete={handleDelete}
       />
+      </RecordDraftBoundary>
       <ConfirmDialog
         busy={deleting}
         confirmLabel="删除"

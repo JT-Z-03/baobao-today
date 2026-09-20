@@ -10,6 +10,7 @@ export interface CreatePeeCommand {
 export interface PeeRepository {
   create(command: CreatePeeCommand): Promise<PeeRecord>;
   getById(id: string): Promise<PeeRecord | null>;
+  getByClientRequestId(clientRequestId: string): Promise<PeeRecord | null>;
   update(id: string, input: PeeUpdateInput, nowMs: number): Promise<PeeRecord>;
   delete(id: string): Promise<void>;
   listByDate(recordDate: string): Promise<PeeRecord[]>;

@@ -1,3 +1,4 @@
+import { useDraftField, useRecordDraftContext } from '@/features/records/hooks/use-record-draft';
 import { useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
@@ -8,7 +9,7 @@ import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
 import { FormScreen } from '@/components/ui/form-screen';
-import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
+import { RecordDateTimeField, RecordDateHint } from '@/components/ui/record-date-time-field';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import {
   inferFeedingComponents,
@@ -22,13 +23,23 @@ import {
 } from '@/domain/feeding/feeding-validation';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
 import { useTheme } from '@/hooks/use-theme';
+import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
+import { BreastfeedingTimerControl } from './breastfeeding-timer';
+
+export type FeedingFormInput = Omit<FeedingCreateInput, 'feedingType'> & { feedingType: FeedingType | null };
+export type FeedingHistoryAmounts = {
+  formula: { amountMl: number; eventTimeMs: number } | null;
+  bottleBreast: { amountMl: number; eventTimeMs: number } | null;
+};
 
 type Props = {
-  initialInput: FeedingCreateInput;
+  initialInput: FeedingFormInput;
+  initialComponents?: FeedingComponent[];
+  historyAmounts?: FeedingHistoryAmounts;
   clientRequestId: string | null;
   submitLabel?: string;
   headerSubtitle?: string;
-  onSave(input: FeedingCreateInput, clientRequestId: string | null): Promise<void>;
+  onSave(input: FeedingCreateInput, clientRequestId: string | null): Promise<unknown>;
   onDelete?: () => void;
 };
 
@@ -82,6 +93,7 @@ function NumericField({
   const { width, fontScale } = useWindowDimensions();
   const stackedNumber = width < 360 || fontScale > 1.3;
   const adjust = (delta: number) => {
+    if (value === '' && delta < 0) return;
     const current = /^\d+$/.test(value) ? Number(value) : 0;
     onChange(Math.max(0, current + delta).toString());
   };
@@ -118,6 +130,7 @@ function NumericField({
             selectTextOnFocus={Platform.OS !== 'android'}
             style={[styles.numberInput, { backgroundColor: theme.primaryContainer }]}
             value={value}
+            placeholder={suffix === 'ml' ? '填写本次奶量' : undefined}
           />
           <ThemedText pointerEvents="none" themeColor="textSecondary">{suffix}</ThemedText>
         </View>
@@ -136,24 +149,27 @@ export function FeedingForm({
   headerSubtitle,
   onSave,
   onDelete,
+  initialComponents,
+  historyAmounts,
 }: Props) {
+  const draftContext = useRecordDraftContext();
   const theme = useTheme();
   const { width, fontScale } = useWindowDimensions();
   const stackedChoices = width < 360 || fontScale > 1.3;
   const submissionLock = useRef(createSubmissionLock());
-  const [feedingType, setFeedingType] = useState(initialInput.feedingType);
-  const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
-  const [milkAmount, setMilkAmount] = useState(() => initialInput.milkAmountMl?.toString() ?? '');
-  const [breastMilkAmount, setBreastMilkAmount] = useState(
+  const [feedingType, setFeedingType] = useDraftField('feedingType', initialInput.feedingType);
+  const [eventTimeMs, setEventTimeMs] = useDraftField('eventTimeMs', initialInput.eventTimeMs);
+  const [milkAmount, setMilkAmount] = useDraftField('milkAmount', () => initialInput.milkAmountMl?.toString() ?? '');
+  const [breastMilkAmount, setBreastMilkAmount] = useDraftField('breastMilkAmount',
     () => initialInput.breastMilkAmountMl?.toString() ?? '',
   );
-  const [leftDuration, setLeftDuration] = useState(() => initialInput.leftDurationMin?.toString() ?? '0');
-  const [rightDuration, setRightDuration] = useState(() => initialInput.rightDurationMin?.toString() ?? '0');
-  const [mixedComponents, setMixedComponents] = useState<FeedingComponent[]>(
-    () => inferFeedingComponents(initialInput),
+  const [leftDuration, setLeftDuration] = useDraftField('leftDuration', () => initialInput.leftDurationMin?.toString() ?? '0');
+  const [rightDuration, setRightDuration] = useDraftField('rightDuration', () => initialInput.rightDurationMin?.toString() ?? '0');
+  const [mixedComponents, setMixedComponents] = useDraftField<FeedingComponent[]>('mixedComponents',
+    () => initialComponents ?? (initialInput.feedingType ? inferFeedingComponents(initialInput) : []),
   );
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FeedingValidationField, string>>>({});
-  const [note, setNote] = useState(initialInput.note ?? '');
+  const [note, setNote] = useDraftField('note', initialInput.note ?? '');
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -166,6 +182,9 @@ export function FeedingForm({
   };
 
   const toggleMixedComponent = (component: FeedingComponent) => {
+    if (component === 'breast' && mixedComponents.includes('breast') && draftContext?.draft?.timer && !draftContext.draft.timer.finished) {
+      void draftContext.timer({ type: 'pause' }).then(() => setErrorMessage('计时已暂停，亲喂内容已保留。请结束计时并核对时长后再调整方式。')).catch(() => setErrorMessage('暂停计时失败，请重试')); return;
+    }
     setMixedComponents((current) => (
       current.includes(component)
         ? current.filter((item) => item !== component)
@@ -181,6 +200,12 @@ export function FeedingForm({
   };
 
   const selectFeedingType = (type: FeedingType) => {
+    if (type !== 'breast' && type !== 'mixed' && draftContext?.draft?.timer && !draftContext.draft.timer.finished) {
+      setErrorMessage('请先结束亲喂计时，再调整喂养方式'); return;
+    }
+    if (type === 'mixed' && draftContext?.draft?.timer && !draftContext.draft.timer.finished) {
+      setMixedComponents((current) => current.includes('breast') ? current : [...current, 'breast']);
+    }
     setFeedingType(type);
     clearFieldError('feedingType');
     if (type === 'formula') clearFieldError('milkAmountMl');
@@ -192,6 +217,7 @@ export function FeedingForm({
   };
 
   const handleSave = async () => {
+    if (!feedingType) { setFieldErrors({ feedingType: '请选择本次喂养方式' }); return; }
     const selected = new Set(mixedComponents);
     const usesFormula = feedingType === 'formula' || (feedingType === 'mixed' && selected.has('formula'));
     const usesBottleBreast = feedingType === 'bottle_breast'
@@ -251,6 +277,7 @@ export function FeedingForm({
       icon="feeding"
       footer={(
         <>
+          <RecordDateHint valueMs={eventTimeMs} />
           {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
           <AppButton
             accessibilityLabel="保存喝奶记录"
@@ -323,7 +350,7 @@ export function FeedingForm({
         )}
 
         <RecordDateTimeField
-          label="记录时间"
+          label="开始喂奶时间"
           error={fieldErrors.eventTimeMs}
           valueMs={eventTimeMs}
           maximumDate={new Date()}
@@ -335,6 +362,9 @@ export function FeedingForm({
           }}
         />
 
+        {showsFormula && historyAmounts?.formula ? <AppButton variant="secondary"
+          label={`上次奶粉 ${historyAmounts.formula.amountMl} ml · ${formatRecordTime(historyAmounts.formula.eventTimeMs, Date.now())}`}
+          onPress={() => setMilkAmount(String(historyAmounts.formula!.amountMl))} /> : null}
         {showsFormula && (
           <NumericField
             label={feedingType === 'mixed' ? '奶粉量' : '奶量'}
@@ -350,6 +380,9 @@ export function FeedingForm({
           />
         )}
 
+        {showsBottleBreast && historyAmounts?.bottleBreast ? <AppButton variant="secondary"
+          label={`上次瓶喂母乳 ${historyAmounts.bottleBreast.amountMl} ml · ${formatRecordTime(historyAmounts.bottleBreast.eventTimeMs, Date.now())}`}
+          onPress={() => setBreastMilkAmount(String(historyAmounts.bottleBreast!.amountMl))} /> : null}
         {showsBottleBreast && (
           <NumericField
             label={feedingType === 'mixed' ? '瓶喂母乳量' : '奶量'}
@@ -365,6 +398,7 @@ export function FeedingForm({
           />
         )}
 
+        {showsBreast && draftContext?.isNew ? <BreastfeedingTimerControl /> : null}
         {showsBreast && (
           <View style={styles.durationGrid}>
             <NumericField

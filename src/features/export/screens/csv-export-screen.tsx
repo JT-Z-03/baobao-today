@@ -79,7 +79,7 @@ export function CsvExportScreen() {
     <>
       <ScreenContainer contentStyle={styles.content}>
         <View style={styles.heading}>
-          <ThemedText style={styles.title} selectable>导出 CSV</ThemedText>
+          <ThemedText style={styles.title} selectable>导出表格</ThemedText>
           <AppIcon name="export" color={theme.pee} size={32} />
         </View>
         <ThemedText type="small" themeColor="textSecondary" selectable>
@@ -122,7 +122,7 @@ export function CsvExportScreen() {
         <ThemedText type="small" themeColor="textSecondary" selectable>跨天睡眠只要与所选日期范围有重叠，就会包含在导出文件中。</ThemedText>
         {message ? <ThemedText accessibilityLiveRegion="polite" selectable>{message}</ThemedText> : null}
         {errorMessage ? <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText> : null}
-        <AppButton accessibilityLabel="开始导出CSV" label="导出 CSV" loading={busy} onPress={() => { void runExport(); }} />
+        <AppButton accessibilityLabel="开始导出CSV" label="导出表格" loading={busy} onPress={() => { void runExport(); }} />
       </ScreenContainer>
       <ConfirmDialog
         visible={emptyConfirmationVisible}

@@ -7,11 +7,14 @@ export interface PeeServiceDependencies {
   createId(): string;
   createClientRequestId(): string;
   operationCoordinator?: BackupOperationCoordinator;
+  assertCurrentDataset?(): Promise<void>;
 }
 
 export function createPeeService(repository: PeeRepository, dependencies: PeeServiceDependencies) {
-  const runMutation = <T,>(operation: () => Promise<T>) =>
-    dependencies.operationCoordinator?.runExclusive(operation) ?? operation();
+  const runMutation = <T,>(operation: () => Promise<T>) => {
+    const guarded = async () => { await dependencies.assertCurrentDataset?.(); return operation(); };
+    return dependencies.operationCoordinator?.runExclusive(guarded) ?? guarded();
+  };
   return {
     createClientRequestId: dependencies.createClientRequestId,
     getCurrentTimeMs: dependencies.now,
@@ -22,6 +25,7 @@ export function createPeeService(repository: PeeRepository, dependencies: PeeSer
       });
     },
     getById: (id: string) => repository.getById(id),
+    getByClientRequestId: (id: string) => repository.getByClientRequestId(id),
     update: (id: string, input: PeeUpdateInput) =>
       runMutation(() => repository.update(id, input, dependencies.now())),
     delete: (id: string) => runMutation(() => repository.delete(id)),

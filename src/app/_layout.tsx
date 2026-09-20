@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter } from 'expo-r
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, View } from 'react-native';
 import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppStateProvider, useAppState } from '@/application/app-state/app-state-provider';
@@ -10,6 +10,7 @@ import { handleFeedingReminderNavigation } from '@/application/reminders/feeding
 import { Colors } from '@/constants/theme';
 import { ThemeModeProvider } from '@/hooks/theme-mode-context';
 import { useTheme } from '@/hooks/use-theme';
+import { RecordSaveFeedback } from '@/features/records/components/record-save-feedback';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -105,7 +106,8 @@ export default function RootLayout() {
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <AppStateProvider>
         <AppThemeProvider>
-          <RootNavigator />
+          <View style={{ flex: 1 }}><RootNavigator /></View>
+          <RecordSaveFeedback />
         </AppThemeProvider>
       </AppStateProvider>
     </SafeAreaProvider>

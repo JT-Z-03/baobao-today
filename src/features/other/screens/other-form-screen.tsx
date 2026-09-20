@@ -1,3 +1,5 @@
+import { discardDeletedDraft } from '@/features/records/discard-deleted-draft';
+import { RecordDraftBoundary } from '@/features/records/components/record-draft-boundary';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 
@@ -14,7 +16,7 @@ type Props = { recordId?: string };
 
 export function OtherFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { babyProfile, otherService } = useAppState();
+  const { babyProfile, otherService, draftService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (otherService?.createClientRequestId() ?? null));
   const [initialInput, setInitialInput] = useState<OtherCoreInput | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -55,7 +57,6 @@ export function OtherFormScreen({ recordId }: Props) {
       if (!stableRequestId) throw new Error('新建请求标识缺失，请重新打开记录页面');
       await otherService.create(input, stableRequestId);
     }
-    router.back();
   };
 
   const handleDelete = recordId ? () => { setDeleteError(null); setDeleteVisible(true); } : undefined;
@@ -65,6 +66,7 @@ export function OtherFormScreen({ recordId }: Props) {
     setDeleteError(null);
     try {
       await otherService.delete(recordId);
+      await discardDeletedDraft(draftService, babyProfile?.id, 'other', recordId);
       setDeleteVisible(false);
       router.back();
     } catch {
@@ -76,6 +78,7 @@ export function OtherFormScreen({ recordId }: Props) {
 
   return (
     <>
+      <RecordDraftBoundary kind="other" recordId={recordId}>
       <OtherForm
         headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(otherService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initialInput}
@@ -84,6 +87,7 @@ export function OtherFormScreen({ recordId }: Props) {
         onSave={handleSave}
         onDelete={handleDelete}
       />
+      </RecordDraftBoundary>
       <ConfirmDialog
         busy={deleting}
         confirmLabel="删除"

@@ -11,6 +11,7 @@ export interface PoopServiceDependencies {
   createClientRequestId(): string;
   createPhotoId(): string;
   operationCoordinator?: BackupOperationCoordinator;
+  assertCurrentDataset?(): Promise<void>;
 }
 
 const ORPHAN_PHOTO_MIN_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -33,8 +34,10 @@ export function createPoopService(
   photoStore: PhotoStore,
   dependencies: PoopServiceDependencies,
 ) {
-  const runMutation = <T,>(operation: () => Promise<T>) =>
-    dependencies.operationCoordinator?.runExclusive(operation) ?? operation();
+  const runMutation = <T,>(operation: () => Promise<T>) => {
+    const guarded = async () => { await dependencies.assertCurrentDataset?.(); return operation(); };
+    return dependencies.operationCoordinator?.runExclusive(guarded) ?? guarded();
+  };
   const createQueues = new Map<string, Promise<void>>();
 
   async function bestEffortDelete(path: string | null) {
@@ -185,6 +188,7 @@ export function createPoopService(
     getCurrentTimeMs: dependencies.now,
     create,
     getById: (id: string) => repository.getById(id),
+    getByClientRequestId: (id: string) => repository.getByClientRequestId(id),
     update,
     delete: deleteRecord,
     getHistory: (date: string) => repository.listByDate(date),

@@ -25,11 +25,14 @@ const record: FeedingRecord = {
 function createRepository(): jest.Mocked<FeedingRepository> {
   return {
     create: jest.fn(async (_command) => record),
+    getByClientRequestId: jest.fn(async (_id: string) => null),
+
     getById: jest.fn(async (_id) => record),
     update: jest.fn(async (_id, _input, _nowMs) => record),
     delete: jest.fn(async (_id) => undefined),
     listByDate: jest.fn(async (_recordDate) => [record]),
     getLatest: jest.fn(async () => record),
+    getLatestMeasured: jest.fn(async (_component) => ({ amountMl: 90, eventTimeMs })),
     getLatestMilkAmount: jest.fn(async () => 90),
     getDailySummary: jest.fn(async (_recordDate) => ({
       feedingCount: 1,
@@ -80,12 +83,15 @@ describe('feeding application service', () => {
     await expect(service.getNewRecordDefaults()).resolves.toEqual({
       eventTimeMs: eventTimeMs + 123,
       feedingType: 'formula',
-      milkAmountMl: 90,
+      milkAmountMl: null,
       breastMilkAmountMl: null,
+      initialComponents: ['formula'],
+      historyAmounts: { formula: { amountMl: 90, eventTimeMs }, bottleBreast: { amountMl: 90, eventTimeMs } },
     });
     await expect(service.getDashboard('2026-07-11')).resolves.toEqual({
       latest: record,
       timeline: [record],
+      breastfeeding: { count: 0, durationMin: 0 },
       summary: {
         feedingCount: 1,
         formulaTotalMl: 60,

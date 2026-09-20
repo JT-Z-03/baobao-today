@@ -124,6 +124,8 @@ export function createBackupService(dependencies: Dependencies) {
 
   return {
     createAndShare,
+    // The export application service owns the shared operation coordinator.
+    createExportArchive: () => createArchive('temporary'),
     createSafetyArchive: () => createArchive('safety'),
   };
 }

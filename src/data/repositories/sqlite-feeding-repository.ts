@@ -168,6 +168,11 @@ export class SQLiteFeedingRepository implements FeedingRepository {
     return persisted;
   }
 
+  async getByClientRequestId(clientRequestId: string) {
+    const row = await getByClientRequestId(this.database, clientRequestId);
+    return row ? mapRow(row) : null;
+  }
+
   getById(id: string) {
     return getById(this.database, id);
   }
@@ -249,6 +254,16 @@ export class SQLiteFeedingRepository implements FeedingRepository {
       LIMIT 1
     `);
     return row?.milk_amount_ml ?? null;
+  }
+
+  async getLatestMeasured(component: 'formula' | 'bottle_breast') {
+    const column = component === 'formula' ? 'milk_amount_ml' : 'breast_milk_amount_ml';
+    const row = await this.database.getFirstAsync<{ amount_ml: number; event_time_ms: number }>(
+      `SELECT ${column} AS amount_ml, event_time_ms FROM records
+       WHERE type = 'feeding' AND ${column} IS NOT NULL
+       ORDER BY sort_time_ms DESC, created_at_ms DESC, id DESC LIMIT 1`,
+    );
+    return row ? { amountMl: row.amount_ml, eventTimeMs: row.event_time_ms } : null;
   }
 
   async getDailySummary(recordDate: string): Promise<FeedingDailySummary> {

@@ -13,6 +13,7 @@ export interface SleepServiceDependencies {
   createId(): string;
   createClientRequestId(): string;
   operationCoordinator?: BackupOperationCoordinator;
+  assertCurrentDataset?(): Promise<void>;
 }
 
 function projectOccurrences(
@@ -37,8 +38,10 @@ export function createSleepService(
   repository: SleepRepository,
   dependencies: SleepServiceDependencies,
 ) {
-  const runMutation = <T,>(operation: () => Promise<T>) =>
-    dependencies.operationCoordinator?.runExclusive(operation) ?? operation();
+  const runMutation = <T,>(operation: () => Promise<T>) => {
+    const guarded = async () => { await dependencies.assertCurrentDataset?.(); return operation(); };
+    return dependencies.operationCoordinator?.runExclusive(guarded) ?? guarded();
+  };
   return {
     createClientRequestId: dependencies.createClientRequestId,
     getCurrentTimeMs: dependencies.now,
@@ -49,6 +52,8 @@ export function createSleepService(
         id: dependencies.createId(), clientRequestId, input, nowMs,
       }));
     },
+
+    getByClientRequestId(id: string) { return repository.getByClientRequestId(id); },
 
     getById(id: string) {
       return repository.getById(id);
@@ -63,8 +68,10 @@ export function createSleepService(
       return runMutation(() => repository.finish(id, nowMs, nowMs));
     },
 
-    finishAt(id: string, endMs: number) {
-      return runMutation(() => repository.finish(id, endMs, dependencies.now()));
+    finishAt(id: string, endMs: number, changes?: ActiveSleepUpdateInput) {
+      return runMutation(() => changes
+        ? repository.finish(id, endMs, dependencies.now(), changes)
+        : repository.finish(id, endMs, dependencies.now()));
     },
 
     updateActive(id: string, input: ActiveSleepUpdateInput) {

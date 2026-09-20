@@ -1,3 +1,5 @@
+import { discardDeletedDraft } from '@/features/records/discard-deleted-draft';
+import { RecordDraftBoundary } from '@/features/records/components/record-draft-boundary';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 
@@ -14,7 +16,7 @@ type Props = { recordId?: string };
 
 export function PeeFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { babyProfile, peeService } = useAppState();
+  const { babyProfile, peeService, draftService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (peeService?.createClientRequestId() ?? null));
   const [initialInput, setInitialInput] = useState<PeeCoreInput | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -57,7 +59,6 @@ export function PeeFormScreen({ recordId }: Props) {
       if (!stableRequestId) throw new Error('新建请求标识缺失，请重新打开记录页面');
       await peeService.create(input, stableRequestId);
     }
-    router.back();
   };
 
   const handleDelete = recordId ? () => { setDeleteError(null); setDeleteVisible(true); } : undefined;
@@ -67,6 +68,7 @@ export function PeeFormScreen({ recordId }: Props) {
     setDeleteError(null);
     try {
       await peeService.delete(recordId);
+      await discardDeletedDraft(draftService, babyProfile?.id, 'pee', recordId);
       setDeleteVisible(false);
       router.back();
     } catch {
@@ -78,6 +80,7 @@ export function PeeFormScreen({ recordId }: Props) {
 
   return (
     <>
+      <RecordDraftBoundary kind="pee" recordId={recordId}>
       <PeeForm
         headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(peeService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initialInput}
@@ -86,6 +89,7 @@ export function PeeFormScreen({ recordId }: Props) {
         onSave={handleSave}
         onDelete={handleDelete}
       />
+      </RecordDraftBoundary>
       <ConfirmDialog
         busy={deleting}
         confirmLabel="删除"

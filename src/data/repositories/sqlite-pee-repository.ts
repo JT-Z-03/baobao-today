@@ -152,6 +152,11 @@ export class SQLitePeeRepository implements PeeRepository {
     return result;
   }
 
+  async getByClientRequestId(clientRequestId: string) {
+    const row = await getByClientRequestId(this.database, clientRequestId);
+    return row ? mapRow(row) : null;
+  }
+
   getById(id: string) {
     return getById(this.database, id);
   }

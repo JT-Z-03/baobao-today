@@ -1,4 +1,5 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 
@@ -68,7 +69,7 @@ test('today milk total consumes the measurable service summary and preserves det
   }) as never);
   const view = await render(<TodayScreen />);
 
-  await waitFor(() => expect(view.getByLabelText('今日奶量777毫升')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('今日奶量777毫升，不含亲喂')).toBeTruthy());
   expect(view.getByLabelText('今日喝奶6次')).toBeTruthy();
   expect(view.queryByLabelText('今日奶粉120毫升')).toBeNull();
   await fireEvent.press(view.getByLabelText('展开今日明细'));
@@ -81,10 +82,10 @@ test('loading does not show zero statistics and a failed load can retry', async 
   state.feedingService.getDashboard.mockRejectedValueOnce(new Error('database failure'));
   jest.mocked(useAppState).mockReturnValue(state as never);
   const view = await render(<TodayScreen />);
-  expect(view.queryByLabelText('今日奶量0毫升')).toBeNull();
+  expect(view.queryByLabelText('今日奶量0毫升，不含亲喂')).toBeNull();
   await waitFor(() => expect(view.getByText('今日记录加载失败，请重试。')).toBeTruthy());
   await fireEvent.press(view.getByLabelText('重新加载'));
-  await waitFor(() => expect(view.getByLabelText('今日奶量0毫升')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('今日奶量0毫升，不含亲喂')).toBeTruthy());
   expect(state.feedingService.getDashboard).toHaveBeenCalledTimes(2);
 });
 
@@ -138,4 +139,49 @@ test('active sleep keeps duration and start time readable while wake only opens 
   } finally {
     clock.mockRestore();
   }
+});
+
+test('without active sleep, relative feeding time keeps advancing and midnight reloads the new day', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date(2026, 8, 20, 23, 59));
+  const state = appState({ feedingCount: 1, formulaTotalMl: 0, breastMilkTotalMl: 0, measurableTotalMl: 0 });
+  const base = await state.feedingService.getDashboard();
+  state.feedingService.getDashboard.mockClear();
+  state.feedingService.getDashboard.mockResolvedValue({ ...base,
+    latest: { id: 'feeding', eventTimeMs: new Date(2026, 8, 20, 23, 50).getTime(), feedingType: 'breast', leftDurationMin: 9, rightDurationMin: 0 },
+    breastfeeding: { count: 1, durationMin: 9 },
+  } as never);
+  jest.mocked(useAppState).mockReturnValue(state as never);
+  try {
+    const view = await render(<TodayScreen />);
+    await waitFor(() => expect(view.getByText('上次喝奶距现在 9分钟')).toBeTruthy());
+    expect(view.getByLabelText('今日亲喂1次，累计9分钟')).toBeTruthy();
+    expect(view.queryByLabelText('今日奶量0毫升，不含亲喂')).toBeNull();
+    expect(view.getByLabelText('今日小便0次，大便0次')).toBeTruthy();
+    await act(async () => { jest.advanceTimersByTime(120_000); });
+    await waitFor(() => expect(view.getByText('上次喝奶距现在 11分钟')).toBeTruthy());
+    expect(state.feedingService.getDashboard).toHaveBeenLastCalledWith('2026-09-21');
+    expect(state.peeService.getDailyCount).toHaveBeenLastCalledWith('2026-09-21');
+    await view.unmount();
+  } finally { jest.useRealTimers(); }
+});
+
+test('returning to the foreground recalibrates the current day without waiting for a timer', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date(2026, 8, 20, 23, 59));
+  const listeners: ((state: string) => void)[] = [];
+  const subscription = jest.spyOn(AppState, 'addEventListener').mockImplementation((event, listener) => {
+    if (event === 'change') listeners.push(listener as (state: string) => void);
+    return { remove: jest.fn() };
+  });
+  const state = appState();
+  jest.mocked(useAppState).mockReturnValue(state as never);
+  try {
+    const view = await render(<TodayScreen />);
+    await waitFor(() => expect(state.feedingService.getDashboard).toHaveBeenCalledWith('2026-09-20'));
+    jest.setSystemTime(new Date(2026, 8, 21, 0, 5));
+    await act(async () => { listeners.forEach((listener) => listener('active')); });
+    await waitFor(() => expect(state.feedingService.getDashboard).toHaveBeenLastCalledWith('2026-09-21'));
+    await view.unmount();
+  } finally { subscription.mockRestore(); jest.useRealTimers(); }
 });

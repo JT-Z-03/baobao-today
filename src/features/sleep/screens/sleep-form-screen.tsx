@@ -1,3 +1,5 @@
+import { discardDeletedDraft } from '@/features/records/discard-deleted-draft';
+import { RecordDraftBoundary } from '@/features/records/components/record-draft-boundary';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { AppState as NativeAppState } from 'react-native';
@@ -15,7 +17,7 @@ type Props = { recordId?: string };
 
 export function SleepFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { babyProfile, sleepService } = useAppState();
+  const { babyProfile, sleepService, draftService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (sleepService?.createClientRequestId() ?? null));
   const [record, setRecord] = useState<SleepRecord | null>(null);
   const [newStartMs, setNewStartMs] = useState<number | null>(null);
@@ -33,9 +35,15 @@ export function SleepFormScreen({ recordId }: Props) {
           if (!existing) throw new Error('睡眠记录不存在或已被删除');
           if (active) setRecord(existing);
         })
-      : sleepService.getActive().then((existing) => {
+      : sleepService.getActive().then(async (existing) => {
           if (!active) return;
-          if (existing) {
+          const pending = draftService && babyProfile ? (await draftService.get({ babyId: babyProfile.id, kind: 'sleep' })).draft : null;
+          if (!active) return;
+          if (existing && pending?.status === 'submitting' && pending.clientRequestId === existing.clientRequestId) {
+            await draftService!.committed(pending.id, existing.id);
+            await draftService!.discard(pending.id);
+          }
+          if (existing && (!pending || pending.clientRequestId === existing.clientRequestId)) {
             router.replace({ pathname: '/sleep/[id]', params: { id: existing.id } });
           } else {
             setNewStartMs(sleepService.getCurrentTimeMs());
@@ -45,7 +53,7 @@ export function SleepFormScreen({ recordId }: Props) {
       if (active) setLoadError(toSafeUiMessage(error, '睡眠记录读取失败，请返回后重试。'));
     });
     return () => { active = false; };
-  }, [recordId, router, sleepService]);
+  }, [recordId, router, sleepService, draftService, babyProfile]);
 
   useEffect(() => {
     if (record?.status !== 'sleeping') return;
@@ -69,17 +77,19 @@ export function SleepFormScreen({ recordId }: Props) {
 
   if (!recordId && newStartMs !== null) {
     return (
+      <RecordDraftBoundary kind="sleep" recordId={recordId}>
       <SleepForm
         headerSubtitle={headerSubtitle}
         mode="new"
         nowMs={sleepService.getCurrentTimeMs()}
         initialValue={{ startMs: newStartMs, endMs: null, note: null }}
-        onSave={async (value) => {
-          if (!clientRequestId) throw new Error('新建请求标识缺失，请重新打开睡眠页面');
-          await sleepService.start({ startMs: value.startMs, note: value.note }, clientRequestId);
-          router.back();
+        onSave={async (value, draftRequestId) => {
+          if (!draftRequestId && !clientRequestId) throw new Error('新建请求标识缺失，请重新打开睡眠页面');
+          const result = await sleepService.start({ startMs: value.startMs, note: value.note }, draftRequestId ?? clientRequestId!);
+          if (result.outcome === 'already-active') throw new Error('已有正在进行的睡眠，请先结束它；本次内容仍保留在草稿中');
         }}
       />
+      </RecordDraftBoundary>
     );
   }
 
@@ -94,6 +104,7 @@ export function SleepFormScreen({ recordId }: Props) {
     setDeleteError(null);
     try {
       await sleepService.delete(current.id);
+      await discardDeletedDraft(draftService, babyProfile?.id, 'sleep', current.id);
       setDeleteVisible(false);
       router.back();
     } catch {
@@ -105,6 +116,7 @@ export function SleepFormScreen({ recordId }: Props) {
 
   return (
     <>
+      <RecordDraftBoundary kind="sleep" recordId={recordId}>
       <SleepForm
         headerSubtitle={headerSubtitle}
         mode={current.status === 'sleeping' ? 'active' : 'completed'}
@@ -119,14 +131,13 @@ export function SleepFormScreen({ recordId }: Props) {
               startMs: value.startMs, endMs: value.endMs, note: value.note,
             });
           }
-          router.back();
         }}
-        onFinish={current.status === 'sleeping' ? async (endMs) => {
-          await sleepService.finishAt(current.id, endMs);
-          router.back();
+        onFinish={current.status === 'sleeping' ? async (endMs, changes) => {
+          await sleepService.finishAt(current.id, endMs, changes);
         } : undefined}
         onDelete={handleDelete}
       />
+      </RecordDraftBoundary>
       <ConfirmDialog
         busy={deleting}
         confirmLabel="删除"

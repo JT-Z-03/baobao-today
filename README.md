@@ -8,25 +8,24 @@ Android 版现已提供安装包，支持 Android 7.0 及以上。iOS 仍在计�
 
 ## 下载与安装
 
-**[下载宝宝今天 1.1.1 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.1.1/baobao-today-1.1.1-code6.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.1.1)
+**[下载宝宝今天 1.2.0 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.0/baobao-today-1.2.0-code8.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.0)
 
 1. 在 Android 手机上下载上面的 `.apk` 文件，打开并按系统提示安装。若系统询问，允许当前浏览器或文件管理器安装此应用。
 2. 已安装旧版的用户可直接覆盖升级；不要先卸载，以免删除手机中的本地记录。
 3. 安装后直接使用，无需注册账号。宝宝资料、记录和照片保存在当前手机，可在设置中创建完整备份。
 
-GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.1.1 / code 6`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
+GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.2.0 / code 8`，设置页显示 `1.2.0 (8)`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
 
 ## 当前源码状态
 
-- Current source version: Android 1.1.1 / versionCode 6
+- Android **1.2.0 / versionCode 8** 包含六项新手照护体验：奶量留空与历史量快捷填写、快速补记时间、五类本机草稿及保存反馈、首页直接展示尿布次数与亲喂摘要、左右亲喂计时、完整备份直接保存与校验。
+- 105 组、621 项自动测试及 Expo Doctor 21/21 通过。使用者已确认 code 7 的功能测试无问题；code 8 另行完成同签名覆盖安装和设置页版本核对，未将其描述为全新一轮完整功能验收。
 - 小便记录页直接展示尿量、颜色和备注，均为选填；取消“更多信息”的展开步骤，与大便记录页一致。
 - API 36 edge-to-edge safe-area fix included
 - Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
 - Soft-rose UI: API 36 emulator checks and a 2026-09-12 Android 14 same-signature code 4→5 installation with launch, navigation, profile and keyboard smoke checks; the latter is not a full product regression
 - iOS has not been built or tested
 - Signed Android APK and SHA-256 checksum are available in GitHub Releases; binaries are not committed to Git history
-
-安装包沿用已对齐的 SDK 57 依赖，包含此前 Hermes 已知回归与版本匹配问题的修复。Expo Doctor 21/21及574项测试通过，验证范围见 [测试说明](docs/TESTING.md)。
 
 ## 功能
 
@@ -39,9 +38,13 @@ GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接
 - CSV 导出：用于查看和分享表格数据。
 - ZIP 完整备份与恢复：包含宝宝资料、五类记录、设置和大便照片。
 
+新增的草稿和未保存计时只保存在当前设备，不进入统计、CSV 或完整备份。看到“草稿已保存在本机”后可退出再继续；点击保存才成为正式记录。亲喂计时结束后按整分钟回填，可核对修改，不换算为毫升。
+
+“导出表格”适合查看或分享记录，“备份全部资料”用于以后恢复。备份生成后还需点“保存到手机”并选择目录；只有写入且读回校验成功才显示已保存。分享到其他应用后，需要到目标应用确认保存结果。恢复成功会清理本机未完成草稿，执行前页面会提示。
+
 ## 界面截图
 
-淡桃粉界面使用奶白背景、柔和的主题色和统一的记录图标，支持浅色与深色。以下为 Android API 36 模拟器实际运行截图，使用虚构宝宝“小满”和虚构记录；不是设计稿，也不代表新的真机安装包验收。
+淡桃粉界面使用奶白背景、柔和的主题色和统一的记录图标，支持浅色与深色。以下为 Android API 36 模拟器实际运行截图，使用虚构宝宝“小满”和虚构记录；这些历史截图用于展示视觉风格，尚未更新为 1.2.0 的全部新交互。
 
 | 今天（浅色） | 今天（深色） |
 | --- | --- |
@@ -61,9 +64,9 @@ GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接
 
 ## 技术栈
 
-- Expo SDK 57.0.22
+- Expo SDK 57.0.24
 - React Native 0.86.3 / React 19.2.3
-- TypeScript 6.0.3 / Expo Router 57.0.21
+- TypeScript 6.0.3 / Expo Router 57.0.22
 - Expo SQLite 57.0.3
 - Jest 29.7.0 / jest-expo 57.0.5
 
@@ -125,6 +128,8 @@ npm run start:dev-client
 
 项目使用原生模块，普通开发以 development build 为准。安装或升级原生依赖、修改 config plugin 或原生配置后，需要重新运行 `npm run android`。
 
+显示版本以 app.json 为准，package.json 与锁文件的项目版本保持同步。设置页读取实际安装包版本及构建号，显示如 1.2.0 (8)。发布时核对标签、文件名、包内版本和 SHA-256；GitHub 发布不会自动更新手机中的应用。
+
 ## 自动测试
 
 ```bash
@@ -173,7 +178,7 @@ npx expo export --platform android --output-dir dist
 
 ## 版权与许可
 
-Copyright © 2026 ZestJT（钟锦涛）。
+Copyright © 2026 ZestJT。
 
 本项目原创代码和文档采用 [MIT License](LICENSE)。MIT 允许使用、复制、修改、分发、再许可和商业使用，但必须保留版权与许可声明，且软件按“原样”提供、不附带担保。
 

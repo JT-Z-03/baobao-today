@@ -17,6 +17,7 @@ const completed: CompletedSleepRecord = { ...active, status: 'completed', endMs 
 function repositoryStub(overrides: Partial<SleepRepository> = {}): SleepRepository {
   return {
     start: jest.fn(async () => ({ record: active, outcome: 'created' as const })),
+    getByClientRequestId: jest.fn(async (_id: string) => null),
     getById: jest.fn(async () => active),
     getActive: jest.fn(async () => active),
     finish: jest.fn(async () => ({ record: completed, outcome: 'completed' as const })),

@@ -11,7 +11,7 @@ import type {
   RestoreRepository,
 } from '@/application/ports/backup';
 
-type RestoreWarning = 'old-photo-cleanup' | 'reminder-sync' | 'app-refresh';
+type RestoreWarning = 'old-photo-cleanup' | 'reminder-sync' | 'app-refresh' | 'draft-state';
 
 type Dependencies = {
   validationService: Pick<BackupValidationService, 'prepare'>;
@@ -25,6 +25,7 @@ type Dependencies = {
   refreshAppState(): Promise<void>;
   now(): number;
   createId(): string;
+  workflow?: { begin(id: string): Promise<void>; end(id: string, committed: boolean): Promise<void> };
 };
 
 export class RestoreStateError extends Error {}
@@ -64,6 +65,7 @@ export function createRestoreService(dependencies: Dependencies) {
       let rechecked: PreparedBackup | null = null;
       const newPhotoPaths: string[] = [];
       let committed = false;
+      let workflowStarted = false;
       try {
         rechecked = await dependencies.validationService.prepare(
           selected.workspace.archiveUri,
@@ -80,6 +82,8 @@ export function createRestoreService(dependencies: Dependencies) {
           }
         }
 
+        await dependencies.workflow?.begin(operationId);
+        workflowStarted = !!dependencies.workflow;
         const oldPhotoPaths = await dependencies.restoreRepository.listReferencedPhotoPaths();
         const restoredPhotoMap = new Map<string, string>();
         const manifestEntries = new Map(rechecked.manifest.entries.map((entry) => [entry.path, entry]));
@@ -103,6 +107,8 @@ export function createRestoreService(dependencies: Dependencies) {
         await dependencies.restoreRepository.replaceAll(rechecked.data, restoredPhotoMap, dependencies.now());
         committed = true;
         const warnings: RestoreWarning[] = [];
+        try { await dependencies.workflow?.end(operationId, true); }
+        catch { warnings.push('draft-state'); }
         for (const oldPath of oldPhotoPaths) {
           if (newPhotoPaths.includes(oldPath)) continue;
           try { await dependencies.photoGateway.deleteManaged(oldPath); }
@@ -117,6 +123,10 @@ export function createRestoreService(dependencies: Dependencies) {
         return { committed: true as const, warnings };
       } catch (error) {
         if (!committed) {
+          if (workflowStarted) {
+            try { await dependencies.workflow?.end(operationId, false); }
+            catch { /* Persisted restore marker quarantines old drafts on restart. */ }
+          }
           for (const newPath of newPhotoPaths) {
             try { await dependencies.photoGateway.deleteManaged(newPath); } catch { /* orphan cleanup fallback */ }
           }
