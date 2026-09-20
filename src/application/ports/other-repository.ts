@@ -10,6 +10,7 @@ export interface CreateOtherCommand {
 export interface OtherRepository {
   create(command: CreateOtherCommand): Promise<OtherRecord>;
   getById(id: string): Promise<OtherRecord | null>;
+  getByClientRequestId(clientRequestId: string): Promise<OtherRecord | null>;
   update(id: string, input: OtherUpdateInput, nowMs: number): Promise<OtherRecord>;
   delete(id: string): Promise<void>;
   listByDate(recordDate: string): Promise<OtherRecord[]>;

@@ -13,6 +13,7 @@ describe('pee service', () => {
   test('coordinates stable IDs, typed writes, and fresh SQLite queries', async () => {
     const repository: PeeRepository = {
       create: jest.fn(async () => record),
+      getByClientRequestId: jest.fn(async (_id: string) => record),
       getById: jest.fn(async () => record),
       update: jest.fn(async () => record),
       delete: jest.fn(async () => undefined),
@@ -27,6 +28,8 @@ describe('pee service', () => {
     const input = { eventTimeMs: 100, amount: null, color: null, note: null };
 
     expect(service.createClientRequestId()).toBe('request-1');
+    await expect(service.getByClientRequestId('request-1')).resolves.toEqual(record);
+    expect(repository.getByClientRequestId).toHaveBeenCalledWith('request-1');
     await service.create(input, 'request-1');
     expect(repository.create).toHaveBeenCalledWith({ id: 'pee-1', clientRequestId: 'request-1', input, nowMs: 100 });
     await expect(service.getHistory('1970-01-01')).resolves.toEqual([record]);
@@ -36,6 +39,7 @@ describe('pee service', () => {
   test('routes create, update, and delete through the shared backup/restore operation coordinator', async () => {
     const repository: PeeRepository = {
       create: jest.fn(async () => record), getById: jest.fn(async () => record),
+      getByClientRequestId: jest.fn(async () => null),
       update: jest.fn(async () => record), delete: jest.fn(async () => undefined),
       listByDate: jest.fn(async () => []), getDailyCount: jest.fn(async () => 0),
     };

@@ -1,3 +1,5 @@
+import { PendingRecordsEntry } from '@/features/records/components/pending-records-entry';
+import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState as NativeAppState, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -27,7 +29,7 @@ import { SleepRecordRow } from '@/features/sleep/components/sleep-record-row';
 import { OtherRecordRow } from '@/features/other/components/other-record-row';
 import { formatSleepDuration } from '@/features/sleep/sleep-format';
 import {
-  formatEventTime,
+  formatEventTime, formatFeedingDetails,
   formatRelativePastTime,
 } from '@/features/feeding/feeding-format';
 import { useTheme } from '@/hooks/use-theme';
@@ -96,18 +98,17 @@ export function TodayScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const { babyProfile, feedingService, poopService, peeService, sleepService, otherService } = useAppState();
-  const [todayDate, setTodayDate] = useState(() => toLocalDateKey(Date.now()));
+  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
+  const todayDate = toLocalDateKey(clockNowMs);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
 
   useFocusEffect(
     useCallback(() => {
       void reloadKey;
       if (!feedingService || !poopService || !peeService || !sleepService || !otherService) return undefined;
       let active = true;
-      const focusedDate = toLocalDateKey(Date.now());
-      setTodayDate(focusedDate);
+      const focusedDate = todayDate;
       setLoadError(null);
       setLoading(true);
       Promise.all([
@@ -132,18 +133,17 @@ export function TodayScreen() {
       return () => {
         active = false;
       };
-    }, [feedingService, otherService, poopService, peeService, sleepService, reloadKey]),
+    }, [feedingService, otherService, poopService, peeService, sleepService, reloadKey, todayDate]),
   );
 
   useEffect(() => {
-    if (!dashboard?.sleep.active) return;
     const refresh = () => setClockNowMs(Date.now());
     const timer = setInterval(refresh, 60_000);
     const subscription = NativeAppState.addEventListener('change', (state) => {
       if (state === 'active') refresh();
     });
     return () => { clearInterval(timer); subscription.remove(); };
-  }, [dashboard?.sleep.active]);
+  }, []);
 
   if (!babyProfile || !feedingService || !poopService || !peeService || !sleepService || !otherService) return null;
   const birthDay = calculateBirthDayNumber(babyProfile.birthDate, todayDate);
@@ -173,6 +173,8 @@ export function TodayScreen() {
   const visibleRecords = timeline.slice(0, 3);
   const date = parseLocalDateKey(todayDate);
   const todayLabel = `${date.getMonth() + 1}月 · 周${'日一二三四五六'[date.getDay()]}`;
+  const breastSummary = dashboard?.feeding.breastfeeding ?? { count: 0, durationMin: 0 };
+  const onlyBreast = breastSummary.count > 0 && dashboard?.feeding.summary.measurableTotalMl === 0;
   const quickActions = (
     <View style={[styles.quickTray, { backgroundColor: theme.primaryContainer }]}>
       <ThemedText style={Typography.fieldLabel}>记一笔</ThemedText>
@@ -211,31 +213,10 @@ export function TodayScreen() {
         </View>
       ) : dashboard ? (
         <>
-          <View style={styles.metrics}>
-            <View accessible accessibilityLabel={`今日喝奶${dashboard.feeding.summary.feedingCount}次`} style={styles.metric}>
-              <View style={styles.metricHeader}><AppIcon name="feeding" color={theme.feeding} size={22} /><ThemedText type="small" style={styles.metricLabel}>喝奶</ThemedText></View>
-              <ThemedText style={Typography.keyNumber}>{dashboard.feeding.summary.feedingCount}<ThemedText> 次</ThemedText></ThemedText>
-            </View>
-            <View accessible accessibilityLabel={`今日奶量${dashboard.feeding.summary.measurableTotalMl}毫升`} style={[styles.metric, { borderLeftWidth: 1, borderLeftColor: theme.divider }]}>
-              <View style={styles.metricHeader}><AppIcon name="milkVolume" color={theme.pee} size={22} /><ThemedText type="small" style={styles.metricLabel}>奶量</ThemedText></View>
-              <ThemedText style={Typography.keyNumber}>{dashboard.feeding.summary.measurableTotalMl}<ThemedText type="small"> ml</ThemedText></ThemedText>
-            </View>
-            <View accessible accessibilityLabel={`今日已完成睡眠${formatSleepDuration(dashboard.sleep.completedTotalMs)}`} style={[styles.metric, styles.sleepMetric, { borderLeftWidth: 1, borderLeftColor: theme.divider }]}>
-              <View style={styles.metricHeader}><AppIcon name="sleep" color={theme.sleep} size={22} /><ThemedText type="small" style={styles.metricLabel}>已完成睡眠</ThemedText></View>
-              <SleepMetricValue durationMs={dashboard.sleep.completedTotalMs} />
-            </View>
-          </View>
-          <View>
-            <Pressable accessibilityRole="button" accessibilityLabel={detailsVisible ? '收起今日明细' : '展开今日明细'} accessibilityState={{ expanded: detailsVisible }} onPress={() => setDetailsVisible((value) => !value)} style={styles.detailsToggle}>
-              <ThemedText type="small" themeColor="textSecondary">今日明细</ThemedText>
-              <AppIcon name={detailsVisible ? 'previous' : 'next'} color={theme.textSecondary} size={14} />
+            <Pressable accessibilityRole="button" accessibilityLabel={dashboard.feeding.latest ? '编辑最近喝奶记录' : '新增喝奶记录'} onPress={() => dashboard.feeding.latest ? openFeeding(dashboard.feeding.latest.id) : openNewFeeding()} style={styles.latestLink}>
+              <ThemedText themeColor="textSecondary">{dashboard.feeding.latest ? `上次喝奶${formatRelativePastTime(dashboard.feeding.latest.eventTimeMs, clockNowMs)}` : '还没有喝奶记录'}</ThemedText>
+              {dashboard.feeding.latest ? <ThemedText type="small" themeColor="textSecondary">{formatRecordTime(dashboard.feeding.latest.eventTimeMs, clockNowMs)} · {formatFeedingDetails(dashboard.feeding.latest)}</ThemedText> : null}
             </Pressable>
-            {detailsVisible ? <View style={[styles.details, { backgroundColor: theme.surfaceElevated }]}>
-              <ThemedText accessibilityLabel={`今日奶粉${dashboard.feeding.summary.formulaTotalMl}毫升`}>奶粉 {dashboard.feeding.summary.formulaTotalMl} ml</ThemedText>
-              <ThemedText accessibilityLabel={`今日瓶喂母乳${dashboard.feeding.summary.breastMilkTotalMl}毫升`}>瓶喂母乳 {dashboard.feeding.summary.breastMilkTotalMl} ml</ThemedText>
-              <ThemedText>大便 {dashboard.poopCount} 次 · 小便 {dashboard.peeCount} 次</ThemedText>
-            </View> : null}
-          </View>
           {dashboard.sleep.active ? (
             <View style={[styles.sleepingPanel, { backgroundColor: theme.primaryContainer }]}>
               {width >= 380 && fontScale <= 1.1 ? <AppIcon name="sleep" color={theme.sleep} size={20} /> : null}
@@ -249,11 +230,35 @@ export function TodayScreen() {
               <AppButton label="醒了" accessibilityLabel="宝宝醒了" compact style={styles.wakeButton} onPress={openSleep} />
             </View>
           ) : null}
+          <PendingRecordsEntry />
+          <View style={styles.metrics}>
+            <View accessible accessibilityLabel={`今日喝奶${dashboard.feeding.summary.feedingCount}次`} style={styles.metric}>
+              <View style={styles.metricHeader}><AppIcon name="feeding" color={theme.feeding} size={22} /><ThemedText type="small" style={styles.metricLabel}>喝奶</ThemedText></View>
+              <ThemedText style={Typography.keyNumber}>{dashboard.feeding.summary.feedingCount}<ThemedText> 次</ThemedText></ThemedText>
+            </View>
+            <View accessible accessibilityLabel={onlyBreast ? `今日亲喂${breastSummary.count}次，累计${breastSummary.durationMin}分钟` : `今日奶量${dashboard.feeding.summary.measurableTotalMl}毫升，不含亲喂`} style={[styles.metric, { borderLeftWidth: 1, borderLeftColor: theme.divider }]}>
+              <View style={styles.metricHeader}><AppIcon name="milkVolume" color={theme.pee} size={22} /><ThemedText type="small" style={styles.metricLabel}>{onlyBreast ? '亲喂' : '奶量'}</ThemedText></View>
+              <ThemedText style={Typography.keyNumber}>{onlyBreast ? breastSummary.durationMin : dashboard.feeding.summary.measurableTotalMl}<ThemedText type="small">{onlyBreast ? " 分钟" : " ml"}</ThemedText></ThemedText>
+            </View>
+            <View accessible accessibilityLabel={`今日已完成睡眠${formatSleepDuration(dashboard.sleep.completedTotalMs)}`} style={[styles.metric, styles.sleepMetric, { borderLeftWidth: 1, borderLeftColor: theme.divider }]}>
+              <View style={styles.metricHeader}><AppIcon name="sleep" color={theme.sleep} size={22} /><ThemedText type="small" style={styles.metricLabel}>已完成睡眠</ThemedText></View>
+              <SleepMetricValue durationMs={dashboard.sleep.completedTotalMs} />
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary">{onlyBreast ? `亲喂 ${breastSummary.count} 次` : `奶量不含亲喂${breastSummary.count ? ` · 亲喂 ${breastSummary.count} 次 / ${breastSummary.durationMin} 分钟` : ""}`}</ThemedText>
+          <ThemedText accessibilityLabel={`今日小便${dashboard.peeCount}次，大便${dashboard.poopCount}次`}>小便 {dashboard.peeCount} 次 · 大便 {dashboard.poopCount} 次</ThemedText>
+          <View>
+            <Pressable accessibilityRole="button" accessibilityLabel={detailsVisible ? '收起今日明细' : '展开今日明细'} accessibilityState={{ expanded: detailsVisible }} onPress={() => setDetailsVisible((value) => !value)} style={styles.detailsToggle}>
+              <ThemedText type="small" themeColor="textSecondary">今日明细</ThemedText>
+              <AppIcon name={detailsVisible ? 'previous' : 'next'} color={theme.textSecondary} size={14} />
+            </Pressable>
+            {detailsVisible ? <View style={[styles.details, { backgroundColor: theme.surfaceElevated }]}>
+              <ThemedText accessibilityLabel={`今日奶粉${dashboard.feeding.summary.formulaTotalMl}毫升`}>奶粉 {dashboard.feeding.summary.formulaTotalMl} ml</ThemedText>
+              <ThemedText accessibilityLabel={`今日瓶喂母乳${dashboard.feeding.summary.breastMilkTotalMl}毫升`}>瓶喂母乳 {dashboard.feeding.summary.breastMilkTotalMl} ml</ThemedText>
+            </View> : null}
+          </View>
           <View style={styles.section}>
             <ThemedText accessibilityRole="header" style={Typography.sectionTitle}>今天的小脚印</ThemedText>
-            <Pressable accessibilityRole="button" accessibilityLabel={dashboard.feeding.latest ? '编辑最近喝奶记录' : '新增喝奶记录'} onPress={() => dashboard.feeding.latest ? openFeeding(dashboard.feeding.latest.id) : openNewFeeding()} style={styles.latestLink}>
-              <ThemedText themeColor="textSecondary">{dashboard.feeding.latest ? `上次喝奶${formatRelativePastTime(dashboard.feeding.latest.eventTimeMs, dashboard.feeding.refreshedAtMs)}` : '还没有喝奶记录'}</ThemedText>
-            </Pressable>
             {visibleRecords.length ? <View>
               {visibleRecords.map((record, index) => {
                 const connector = timelineConnector(index, visibleRecords.length);

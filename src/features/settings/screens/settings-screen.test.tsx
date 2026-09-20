@@ -1,4 +1,6 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 import type { FeedingReminderStatus } from '@/application/reminders/feeding-reminder-service';
@@ -11,6 +13,7 @@ jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: je
 jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
 jest.mock('@/components/ui/app-illustration', () => ({ AppIllustration: () => null }));
 jest.mock('expo-constants', () => ({ expoConfig: { version: '7.8.9' } }));
+jest.mock('expo-application', () => ({ nativeApplicationVersion: '5.6.7', nativeBuildVersion: '42' }));
 jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
@@ -49,7 +52,10 @@ async function renderScreen(reminderService = createReminderService()) {
 }
 
 describe('SettingsScreen feeding reminders', () => {
-  beforeEach(() => mockPush.mockClear());
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    mockPush.mockClear();
+  });
 
   test('reads status on focus without enabling or requesting a reminder', async () => {
     const { screen, reminderService } = await renderScreen();
@@ -127,8 +133,8 @@ describe('SettingsScreen feeding reminders', () => {
   test('opens CSV data export with clear photo limitations', async () => {
     const { screen } = await renderScreen();
     expect(screen.getByText('数据管理')).toBeTruthy();
-    expect(screen.getByText('导出CSV')).toBeTruthy();
-    expect(screen.getByText('用于查看和分享，不含照片')).toBeTruthy();
+    expect(screen.getByText('导出表格')).toBeTruthy();
+    expect(screen.getByText('查看或分享记录，不含照片，不能恢复资料')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('导出CSV'));
 
@@ -156,7 +162,28 @@ describe('SettingsScreen feeding reminders', () => {
     expect(screen.getByText('出生日期 2026年6月20日')).toBeTruthy();
     expect(screen.queryByLabelText(/编辑宝宝|修改资料|更换头像/)).toBeNull();
     expect(screen.getByText('当前版本')).toBeTruthy();
+    expect(screen.getByText('5.6.7 (42)')).toBeTruthy();
+    expect(screen.queryByText('7.8.9')).toBeNull();
+  });
+
+  test('uses the config version when no native app version is available', async () => {
+    jest.replaceProperty(Application, 'nativeApplicationVersion', null);
+    const { screen } = await renderScreen();
     expect(screen.getByText('7.8.9')).toBeTruthy();
+    expect(screen.queryByText('7.8.9 (42)')).toBeNull();
+  });
+
+  test('keeps the native version when its build number is unavailable', async () => {
+    jest.replaceProperty(Application, 'nativeBuildVersion', null);
+    const { screen } = await renderScreen();
+    expect(screen.getByText('5.6.7')).toBeTruthy();
+  });
+
+  test('shows an honest fallback when neither version source is available', async () => {
+    jest.replaceProperty(Application, 'nativeApplicationVersion', null);
+    jest.replaceProperty(Constants, 'expoConfig', null);
+    const { screen } = await renderScreen();
+    expect(screen.getByText('版本信息暂不可用')).toBeTruthy();
   });
 
   test('keeps all reminder options disabled while saving', async () => {

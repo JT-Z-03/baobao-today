@@ -1,3 +1,5 @@
+import { discardDeletedDraft } from '@/features/records/discard-deleted-draft';
+import { RecordDraftBoundary } from '@/features/records/components/record-draft-boundary';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 
@@ -15,7 +17,7 @@ type InitialState = { input: PoopCoreInput; photoPreviewUri: string | null; hasP
 
 export function PoopFormScreen({ recordId }: Props) {
   const router = useRouter();
-  const { babyProfile, poopService } = useAppState();
+  const { babyProfile, poopService, draftService } = useAppState();
   const [clientRequestId] = useState(() => recordId ? null : (poopService?.createClientRequestId() ?? null));
   const [initial, setInitial] = useState<InitialState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -62,7 +64,6 @@ export function PoopFormScreen({ recordId }: Props) {
       if (!stableRequestId) throw new Error('新建请求标识缺失，请重新打开记录页面');
       await poopService.create({ ...input, photo: photoChange.kind === 'replace' ? photoChange.source : null }, stableRequestId);
     }
-    router.back();
   };
 
   const handleDelete = recordId ? () => { setDeleteError(null); setDeleteVisible(true); } : undefined;
@@ -72,6 +73,7 @@ export function PoopFormScreen({ recordId }: Props) {
     setDeleteError(null);
     try {
       await poopService.delete(recordId);
+      await discardDeletedDraft(draftService, babyProfile?.id, 'poop', recordId);
       setDeleteVisible(false);
       router.back();
     } catch {
@@ -83,6 +85,7 @@ export function PoopFormScreen({ recordId }: Props) {
 
   return (
     <>
+      <RecordDraftBoundary kind="poop" recordId={recordId}>
       <PoopForm
         headerSubtitle={babyProfile ? `${babyProfile.name} · 出生第 ${calculateBirthDayNumber(babyProfile.birthDate, toLocalDateKey(poopService.getCurrentTimeMs()))} 天` : undefined}
         initialInput={initial.input}
@@ -93,6 +96,7 @@ export function PoopFormScreen({ recordId }: Props) {
         onSave={handleSave}
         onDelete={handleDelete}
       />
+      </RecordDraftBoundary>
       <ConfirmDialog
         busy={deleting}
         confirmLabel="删除"

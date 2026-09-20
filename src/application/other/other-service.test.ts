@@ -13,6 +13,7 @@ describe('other service', () => {
     };
     const repository: OtherRepository = {
       create: jest.fn(async () => record),
+      getByClientRequestId: jest.fn(async (_id: string) => record),
       getById: jest.fn(async () => record),
       update: jest.fn(async () => record),
       delete: jest.fn(async () => undefined),
@@ -22,6 +23,8 @@ describe('other service', () => {
       now: () => nowMs, createId: () => 'other-1', createClientRequestId: () => 'request-1',
     });
     expect(service.createClientRequestId()).toBe('request-1');
+    await expect(service.getByClientRequestId('request-1')).resolves.toEqual(record);
+    expect(repository.getByClientRequestId).toHaveBeenCalledWith('request-1');
     await service.create({ eventTimeMs: nowMs, title: '洗澡', note: null }, 'stable-request');
     expect(repository.create).toHaveBeenCalledWith({
       id: 'other-1', clientRequestId: 'stable-request', nowMs,

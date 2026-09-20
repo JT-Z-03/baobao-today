@@ -16,6 +16,13 @@ export type NormalizedFeedingInput = FeedingCreateInput;
 
 export type FeedingUpdateInput = FeedingCreateInput;
 
+export function summarizeBreastfeeding(records: readonly FeedingCreateInput[]) {
+  return records.reduce((summary, record) => {
+    const minutes = (record.leftDurationMin ?? 0) + (record.rightDurationMin ?? 0);
+    return { count: summary.count + (minutes > 0 ? 1 : 0), durationMin: summary.durationMin + minutes };
+  }, { count: 0, durationMin: 0 });
+}
+
 export function inferFeedingComponents(
   input: Pick<
     FeedingCreateInput,

@@ -93,6 +93,15 @@ describe('SQLiteSleepRepository host SQLite integration', () => {
     });
   });
 
+  test('finishing saves unsaved start and note atomically, and invalid finish leaves all original fields', async () => {
+    await repository.start({ id: 'sleep-1', clientRequestId: 'request-1', nowMs: startMs, input: { startMs, note: 'before' } });
+    await expect(repository.finish('sleep-1', endMs, endMs, { startMs: endMs + 1, note: 'invalid' })).rejects.toThrow();
+    expect(await repository.getById('sleep-1')).toMatchObject({ status: 'sleeping', startMs, note: 'before' });
+    const newStart = startMs - 60_000;
+    expect((await repository.finish('sleep-1', endMs, endMs, { startMs: newStart, note: ' after ' })).record)
+      .toMatchObject({ status: 'completed', startMs: newStart, eventTimeMs: newStart, sortTimeMs: newStart, endMs, note: 'after' });
+  });
+
   test('uses typed state-specific edits and re-derives fields from a changed start', async () => {
     await repository.start({ id: 'sleep-1', clientRequestId: 'request-1', nowMs: startMs, input: { startMs, note: null } });
     const movedStart = new Date(2026, 6, 9, 22, 0).getTime();

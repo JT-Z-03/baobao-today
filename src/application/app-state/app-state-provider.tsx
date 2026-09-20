@@ -51,12 +51,20 @@ import { ExpoBackupPhotoGateway } from '@/data/backup/expo-backup-photo-gateway'
 import { ExpoBackupDocumentPickerGateway } from '@/data/backup/expo-backup-document-picker';
 import { ExpoBackupShareGateway } from '@/data/backup/expo-backup-share-gateway';
 import { ExpoBackupHashGateway } from '@/data/backup/expo-backup-hash-gateway';
+import { getWorkflowStore } from '@/data/workflow/workflow-database';
+import { createRecordDraftService, type RecordDraftService } from '@/application/drafts/record-draft-service';
+import { createBackupExportService, type BackupExportService } from '@/application/backup/backup-export-service';
+import { ExpoBackupExportGateway } from '@/data/backup/expo-backup-export-gateway';
+import { ExpoDraftAttachmentStore } from '@/data/workflow/expo-draft-attachment-store';
 
 installForegroundNotificationHandler();
 
 type AppStatus = 'loading' | 'ready' | 'error';
 
 type AppStateValue = {
+  draftService: RecordDraftService | null;
+  draftError: string | null;
+  backupExportService: BackupExportService | null;
   status: AppStatus;
   errorMessage: string | null;
   babyProfile: BabyProfile | null;
@@ -78,6 +86,9 @@ type AppStateValue = {
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({ children }: PropsWithChildren) {
+  const [draftService, setDraftService] = useState<RecordDraftService | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [backupExportService, setBackupExportService] = useState<BackupExportService | null>(null);
   const [status, setStatus] = useState<AppStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [babyProfile, setBabyProfile] = useState<BabyProfile | null>(null);
@@ -116,11 +127,30 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
     getDatabase()
       .then(async (database) => {
+        let initializedDraftService: RecordDraftService | null = null;
+        let generation = '';
+        try {
+          const workflowStore = await getWorkflowStore();
+          generation = (await workflowStore.read()).generation;
+          initializedDraftService = createRecordDraftService(workflowStore, Date.now, Crypto.randomUUID);
+          const workflow = await workflowStore.read();
+          const references = new Set(Object.values(workflow.drafts).flatMap((draft) =>
+            draft.kind === 'poop' && draft.values.photoChange.kind === 'replace' ? [draft.values.photoChange.source.uri] : []));
+          await new ExpoDraftAttachmentStore().cleanup(references, Date.now() - 24 * 60 * 60_000).catch(() => undefined);
+          if (active) setDraftError(null);
+        } catch {
+          if (active) setDraftError('本机草稿暂不可用，原资料已保留，请重试');
+        }
+        if (active) setDraftService(initializedDraftService);
         const idDependencies = {
           now: Date.now,
           createId: Crypto.randomUUID,
           createClientRequestId: Crypto.randomUUID,
           operationCoordinator,
+          assertCurrentDataset: async () => {
+            if (!initializedDraftService) throw new Error('草稿状态暂不可用，请重试后保存');
+            await initializedDraftService.assertGeneration(generation);
+          },
         };
         const initializedPoopService = createPoopService(
           createSQLitePoopRepository(database),
@@ -189,6 +219,13 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           timezoneId: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
           timezoneOffsetMinutes: () => new Date().getTimezoneOffset(),
         });
+        if (initializedDraftService) {
+          const exports = createBackupExportService({ backup: initializedBackupService,
+            gateway: new ExpoBackupExportGateway(), store: initializedDraftService.store,
+            share: new ExpoBackupShareGateway(), coordinator: operationCoordinator, now: Date.now, createId: Crypto.randomUUID });
+          if (initializationRequest.reminderReason === 'cold-start') await exports.reconcilePending().catch(() => undefined);
+          if (active) setBackupExportService(exports);
+        } else if (active) setBackupExportService(null);
         const initializedRestoreService = createRestoreService({
           validationService: backupValidationService,
           fileStore: backupFileStore,
@@ -201,6 +238,15 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           refreshAppState: async () => requestInitialization('restore-refresh'),
           now: Date.now,
           createId: Crypto.randomUUID,
+          workflow: {
+            begin: async (id: string) => {
+              if (!initializedDraftService) throw new Error('草稿状态暂不可用，请重试后恢复资料');
+              await initializedDraftService.beginRestore(id);
+            },
+            end: async (id: string, committed: boolean) => {
+              await initializedDraftService?.endRestore(id, committed);
+            },
+          },
         });
         const themeRepository = createSQLiteThemeSettingsRepository(database);
         const loadedThemeMode = await themeRepository.get();
@@ -305,6 +351,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<AppStateValue>(
     () => ({
+      draftService,
+      draftError,
+      backupExportService,
       status,
       errorMessage,
       babyProfile,
@@ -322,7 +371,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       saveInitialBabyProfile,
       retryInitialization,
     }),
-    [backupService, babyProfile, errorMessage, exportCsvService, feedingReminderService, feedingService, otherService, peeService, poopService, restoreService, retryInitialization, saveInitialBabyProfile, sleepService, status, themeMode, themeService],
+    [draftService, draftError, backupExportService, backupService, babyProfile, errorMessage, exportCsvService, feedingReminderService, feedingService, otherService, peeService, poopService, restoreService, retryInitialization, saveInitialBabyProfile, sleepService, status, themeMode, themeService],
   );
 
   return <AppStateContext value={value}>{children}</AppStateContext>;

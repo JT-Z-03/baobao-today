@@ -178,6 +178,11 @@ export class SQLiteSleepRepository implements SleepRepository {
     return result;
   }
 
+  async getByClientRequestId(clientRequestId: string) {
+    const row = await getByClientRequestId(this.database, clientRequestId);
+    return row ? mapRow(row) : null;
+  }
+
   getById(id: string) {
     return getById(this.database, id);
   }
@@ -186,7 +191,7 @@ export class SQLiteSleepRepository implements SleepRepository {
     return getActive(this.database);
   }
 
-  async finish(id: string, endMs: number, nowMs: number): Promise<FinishSleepResult> {
+  async finish(id: string, endMs: number, nowMs: number, changes?: ActiveSleepUpdateInput): Promise<FinishSleepResult> {
     let result: FinishSleepResult | null = null;
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
       const existing = await getById(transaction, id);
@@ -196,12 +201,14 @@ export class SQLiteSleepRepository implements SleepRepository {
         return;
       }
       const normalized = normalizeAndValidateCompletedSleepInput(
-        { startMs: existing.startMs, endMs, note: existing.note },
+        { startMs: changes?.startMs ?? existing.startMs, endMs, note: changes ? changes.note : existing.note },
         nowMs,
       );
+      const derived = deriveRecordFields({ type: 'sleep', sleepStartMs: normalized.startMs, sleepEndMs: normalized.endMs });
       await transaction.runAsync(
-        `UPDATE records SET sleep_end_ms = ?, sleep_status = 'completed', updated_at_ms = ?
+        `UPDATE records SET sleep_start_ms = ?, event_time_ms = ?, record_date = ?, sort_time_ms = ?, note = ?, sleep_end_ms = ?, sleep_status = 'completed', updated_at_ms = ?
          WHERE id = ? AND type = 'sleep' AND sleep_status = 'sleeping'`,
+        normalized.startMs, normalized.startMs, derived.recordDate, derived.sortTimeMs, normalized.note,
         normalized.endMs,
         nowMs,
         id,

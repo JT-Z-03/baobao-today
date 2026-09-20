@@ -11,7 +11,7 @@ const mockSleepService = {
   getCurrentTimeMs: jest.fn(() => mockNow),
   getActive: jest.fn(async (): Promise<typeof mockRecord | null> => null),
   getById: jest.fn(async () => mockRecord),
-  start: jest.fn(async () => undefined),
+  start: jest.fn(async () => ({ outcome: 'created' })),
   updateActive: jest.fn(async () => undefined),
   updateCompleted: jest.fn(async () => undefined),
   finishAt: jest.fn(async () => undefined),
@@ -58,7 +58,7 @@ describe('SleepFormScreen', () => {
     expect(mockSleepService.finishAt).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByLabelText('宝宝醒了'));
     await fireEvent.press(screen.getByLabelText('确认结束睡眠'));
-    await waitFor(() => expect(mockSleepService.finishAt).toHaveBeenCalledWith('sleep-1', mockNow));
+    await waitFor(() => expect(mockSleepService.finishAt).toHaveBeenCalledWith('sleep-1', mockNow, { startMs: mockStart, note: '原备注' }));
     expect(mockSleepService.finishAt).toHaveBeenCalledTimes(1);
     expect(mockSleepService.updateActive).not.toHaveBeenCalled();
     expect(mockRouter.back).toHaveBeenCalledTimes(1);

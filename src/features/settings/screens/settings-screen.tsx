@@ -1,4 +1,7 @@
+import { useLocalClock } from '@/hooks/use-local-clock';
+import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -61,12 +64,20 @@ function SettingsSection({ title, icon, children }: {
 }
 
 export function SettingsScreen() {
+  const nativeVersion = Application.nativeApplicationVersion;
+  const version = nativeVersion ?? Constants.expoConfig?.version;
+  const build = nativeVersion ? Application.nativeBuildVersion : null;
+  const versionLabel = version
+    ? `${version}${build ? ` (${build})` : ''}`
+    : '版本信息暂不可用';
   const theme = useTheme();
   const { width, fontScale } = useWindowDimensions();
   const wrapReminderChoices = width < 360 || fontScale > 1.1;
   const reminderChoiceStyle = [styles.reminderChoice, wrapReminderChoices && styles.reminderChoiceWrapped];
   const router = useRouter();
-  const { babyProfile, feedingReminderService, themeMode, themeService } = useAppState();
+  const nowMs = useLocalClock();
+  const { babyProfile, feedingReminderService, themeMode, themeService, backupExportService } = useAppState();
+  const [lastBackupMs, setLastBackupMs] = useState<number | null>(null);
   const [status, setStatus] = useState<FeedingReminderStatus | null>(null);
   const [customVisible, setCustomVisible] = useState(false);
   const [customHours, setCustomHours] = useState('2');
@@ -77,12 +88,13 @@ export function SettingsScreen() {
   const [developmentVisible, setDevelopmentVisible] = useState(false);
   const [reminderInfoVisible, setReminderInfoVisible] = useState(false);
   const [themeBusy, setThemeBusy] = useState(false);
-  const [today, setToday] = useState(() => toLocalDateKey(Date.now()));
+  const [today, setToday] = useState(() => toLocalDateKey(nowMs));
 
   const refreshStatus = useCallback(() => {
     setToday(toLocalDateKey(Date.now()));
-    if (!feedingReminderService) return undefined;
     let active = true;
+    void backupExportService?.latest().then((receipt) => { if (active) setLastBackupMs(receipt?.savedAtMs ?? null); }).catch(() => undefined);
+    if (!feedingReminderService) return () => { active = false; };
     void feedingReminderService.syncFeedingReminder()
       .then((nextStatus) => {
         if (active) setStatus(nextStatus);
@@ -99,7 +111,7 @@ export function SettingsScreen() {
         });
       });
     return () => { active = false; };
-  }, [feedingReminderService]);
+  }, [feedingReminderService, backupExportService]);
 
   useFocusEffect(refreshStatus);
 
@@ -339,8 +351,8 @@ export function SettingsScreen() {
             style={({ pressed }) => [styles.dataRow, pressed && styles.pressed]}>
             <AppIcon color={theme.pee} name="export" size={28} />
             <View style={styles.dataCopy}>
-              <ThemedText type="smallBold">导出CSV</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">用于查看和分享，不含照片</ThemedText>
+              <ThemedText type="smallBold">导出表格</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">查看或分享记录，不含照片，不能恢复资料</ThemedText>
             </View>
             <AppIcon color={theme.textSecondary} name="next" size={20} />
           </Pressable>
@@ -353,7 +365,8 @@ export function SettingsScreen() {
             style={({ pressed }) => [styles.dataRow, pressed && styles.pressed]}>
             <AppIcon color={theme.primary} name="backup" size={28} />
             <View style={styles.dataCopy}>
-              <ThemedText type="smallBold">完整备份与恢复</ThemedText>
+              <ThemedText type="smallBold">备份全部资料</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">{lastBackupMs ? `上次保存：${formatRecordTime(lastBackupMs, nowMs)}` : "尚无已验证的外部备份"}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">包含记录和照片</ThemedText>
             </View>
             <AppIcon color={theme.textSecondary} name="next" size={20} />
@@ -367,7 +380,7 @@ export function SettingsScreen() {
         </ThemedText>
         <View style={styles.statusRow}>
           <ThemedText type="small" themeColor="textMuted">当前版本</ThemedText>
-          <ThemedText type="small" themeColor="textMuted" selectable>{Constants.expoConfig?.version ?? '版本信息暂不可用'}</ThemedText>
+          <ThemedText type="small" themeColor="textMuted" selectable>{versionLabel}</ThemedText>
         </View>
       </View>
     </NativeTabScreenContainer>

@@ -47,7 +47,7 @@ describe('BackupRestoreScreen', () => {
   test('shows privacy, replacement, CSV distinction, and undo controls', async () => {
     const { screen } = await setup();
     expect(screen.getByText(/当前备份文件未加密/)).toBeTruthy();
-    expect(screen.getByText(/CSV用于查看和分享/)).toBeTruthy();
+    expect(screen.getByText(/导出表格适合查看、整理和打印，不含照片，不能恢复应用/)).toBeTruthy();
     expect(screen.getByText(/恢复会替换当前宝宝资料/)).toBeTruthy();
     await waitFor(() => expect(screen.getByLabelText('撤销上次恢复')).toBeTruthy());
   });

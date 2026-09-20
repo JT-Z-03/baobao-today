@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
+import { WORKFLOW_SCHEMA_SQL } from '../src/data/workflow/workflow-schema.ts';
 import { MIGRATIONS } from '../src/data/database/migrations.ts';
 
 const database = new DatabaseSync(':memory:');
@@ -122,3 +123,14 @@ try {
 } finally {
   database.close();
 }
+
+const workflow = new DatabaseSync(':memory:');
+try {
+  workflow.exec(WORKFLOW_SCHEMA_SQL);
+  workflow.prepare('INSERT INTO workflow_state(id, value) VALUES(1, ?)').run(JSON.stringify({format:1}));
+  if (workflow.prepare('PRAGMA user_version').get().user_version !== 1) throw new Error('Workflow schema version mismatch');
+  let rejected = false;
+  try { workflow.prepare('UPDATE workflow_state SET value = ?').run('invalid-json'); } catch { rejected = true; }
+  if (!rejected) throw new Error('Invalid workflow JSON was accepted');
+  console.log('Workflow SQLite schema 1: separate database and JSON constraint verified');
+} finally { workflow.close(); }

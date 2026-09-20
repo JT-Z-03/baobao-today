@@ -1,3 +1,4 @@
+import { useDraftField } from '@/features/records/hooks/use-record-draft';
 import { useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
@@ -7,7 +8,7 @@ import { AppIllustration } from '@/components/ui/app-illustration';
 import { AppTextInput } from '@/components/ui/app-text-input';
 import { FormField } from '@/components/ui/form-field';
 import { FormScreen } from '@/components/ui/form-screen';
-import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
+import { RecordDateTimeField, RecordDateHint } from '@/components/ui/record-date-time-field';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import { SleepValidationError } from '@/domain/sleep/sleep-validation';
 import { formatSleepClock, formatSleepDuration } from '@/features/sleep/sleep-format';
@@ -23,8 +24,8 @@ type Props = {
   initialValue: SleepFormValue;
   nowMs: number;
   headerSubtitle?: string;
-  onSave(value: SleepFormValue): Promise<void>;
-  onFinish?: (endMs: number) => Promise<void>;
+  onSave(value: SleepFormValue, draftRequestId?: string): Promise<void>;
+  onFinish?: (endMs: number, changes?: Pick<SleepFormValue, 'startMs' | 'note'>) => Promise<void>;
   onDelete?: () => void;
 };
 
@@ -42,13 +43,14 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
   const { width, fontScale } = useWindowDimensions();
   const stackedPanel = width < 360 || fontScale > 1.3;
   const lock = useRef(createSleepActionLock());
-  const [startMs, setStartMs] = useState(initialValue.startMs);
-  const [endMs, setEndMs] = useState(initialValue.endMs);
-  const [note, setNote] = useState(initialValue.note ?? '');
+  const [startMs, setStartMs] = useDraftField('startMs', initialValue.startMs);
+  const [endMs, setEndMs] = useDraftField('endMs', initialValue.endMs);
+  const [note, setNote] = useDraftField('note', initialValue.note ?? '');
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ErrorField, string>>>({});
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [shortcutField, setShortcutField] = useState<'start' | 'end'>('start');
 
   const clearFieldError = (field: ErrorField) => setFieldErrors((current) => {
     const { [field]: _removed, ...remaining } = current;
@@ -73,11 +75,13 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
   const renderTimeField = (field: 'start' | 'end', value: number, label: string) => (
     <RecordDateTimeField
       label={label}
+      shortcuts={shortcutField === field}
+      onActivate={() => setShortcutField(field)}
       valueMs={value}
       error={fieldErrors[field]}
       maximumDate={new Date(nowMs)}
-      dateAccessibilityLabel={`修改${label.replace(/时间$/, '')}日期`}
-      timeAccessibilityLabel={`修改${label}`}
+      dateAccessibilityLabel={field === 'start' ? '修改开始日期' : '修改结束日期'}
+      timeAccessibilityLabel={field === 'start' ? '修改开始时间' : '修改结束时间'}
       onChange={(next) => {
         if (field === 'start') setStartMs(next);
         else setEndMs(next);
@@ -88,6 +92,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
 
   const footer = (
     <>
+        <RecordDateHint valueMs={confirmingFinish && endMs !== null ? endMs : startMs} />
         {errorMessage && <ThemedText accessibilityLiveRegion="polite" themeColor="danger" selectable>{errorMessage}</ThemedText>}
         {mode === 'active' && onFinish && !confirmingFinish && (
           <AppButton
@@ -97,7 +102,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
             onPress={() => {
               setEndMs(nowMs);
               clearFieldError('end');
-              setConfirmingFinish(true);
+              setConfirmingFinish(true); setShortcutField('end');
             }}
           />
         )}
@@ -108,7 +113,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
               accessibilityLabel="确认结束睡眠"
               label="确认结束睡眠"
               loading={saving}
-              onPress={() => void runAction(() => onFinish(endMs))}
+              onPress={() => void runAction(() => onFinish(endMs, { startMs, note: note || null }))}
             />
             <AppButton
               accessibilityLabel="取消结束睡眠"
@@ -162,10 +167,10 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
         </View>
       )}
 
-      {renderTimeField('start', startMs, '开始时间')}
+      {renderTimeField('start', startMs, '入睡时间')}
       {(mode === 'completed' || (mode === 'active' && confirmingFinish)) && endMs !== null && (
         <>
-          {renderTimeField('end', endMs, '结束时间')}
+          {renderTimeField('end', endMs, '醒来时间')}
           <ThemedText themeColor="textSecondary" selectable>本次睡眠 {formatSleepDuration(endMs - startMs)}</ThemedText>
         </>
       )}

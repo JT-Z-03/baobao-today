@@ -77,6 +77,14 @@ describe('SQLiteFeedingRepository host SQLite integration', () => {
 
   afterEach(() => sqlite.close());
 
+  test('measured history stays separated by component and uses occurrence order including mixed records', async () => {
+    await repository.create({ id:'a', clientRequestId:'a', input:formulaInput(july11Morning, 60), nowMs:july11Morning });
+    await repository.create({ id:'b', clientRequestId:'b', input:{...formulaInput(july11Morning + 1000, 90), feedingType:'mixed', breastMilkAmountMl:80}, nowMs:july11Morning + 1000 });
+    await repository.create({ id:'c', clientRequestId:'c', input:formulaInput(july11Morning - 1000, 30), nowMs:july11Morning + 2000 });
+    expect(await repository.getLatestMeasured('formula')).toEqual({ amountMl:90, eventTimeMs:july11Morning + 1000 });
+    expect(await repository.getLatestMeasured('bottle_breast')).toEqual({ amountMl:80, eventTimeMs:july11Morning + 1000 });
+  });
+
   test('creates and reads a feeding record with repository-derived fields', async () => {
     const record = await repository.create({
       id: 'feeding-1',

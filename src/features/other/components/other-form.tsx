@@ -1,3 +1,4 @@
+import { useDraftField } from '@/features/records/hooks/use-record-draft';
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -6,7 +7,7 @@ import { AppTextInput } from '@/components/ui/app-text-input';
 import { ChoiceChip } from '@/components/ui/choice-chip';
 import { FormField } from '@/components/ui/form-field';
 import { FormScreen } from '@/components/ui/form-screen';
-import { RecordDateTimeField } from '@/components/ui/record-date-time-field';
+import { RecordDateTimeField, RecordDateHint } from '@/components/ui/record-date-time-field';
 import { Spacing } from '@/constants/theme';
 import type { OtherCoreInput } from '@/domain/other/other';
 import { toSafeUiMessage } from '@/features/system/safe-ui-message';
@@ -47,9 +48,9 @@ export function OtherForm({
   onDelete,
 }: Props) {
   const submissionLock = useRef(createOtherSubmissionLock());
-  const [eventTimeMs, setEventTimeMs] = useState(initialInput.eventTimeMs);
-  const [title, setTitle] = useState(initialInput.title);
-  const [note, setNote] = useState(initialInput.note ?? '');
+  const [eventTimeMs, setEventTimeMs] = useDraftField('eventTimeMs', initialInput.eventTimeMs);
+  const [title, setTitle] = useDraftField('title', initialInput.title);
+  const [note, setNote] = useDraftField('note', initialInput.note ?? '');
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -74,12 +75,13 @@ export function OtherForm({
       icon="other"
       footer={(
         <>
+          <RecordDateHint valueMs={eventTimeMs} />
           <AppButton accessibilityLabel="保存其他记录" label={submitLabel} loading={saving} onPress={() => { void handleSave(); }} />
           {onDelete ? <AppButton accessibilityLabel="删除其他记录" disabled={saving} label="删除记录" onPress={onDelete} variant="destructive-ghost" /> : null}
         </>
       )}>
         <RecordDateTimeField
-          label="记录时间"
+          label="发生时间"
           valueMs={eventTimeMs}
           onChange={setEventTimeMs}
           maximumDate={new Date()}

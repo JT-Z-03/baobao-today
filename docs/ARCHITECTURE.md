@@ -26,7 +26,7 @@ flowchart LR
 
 界面不直接执行 SQL。应用服务通过端口调用 repository，使领域规则和数据实现保持可独立测试。
 
-公共 UI 使用 `theme.ts` 的浅深色 token；`FormScreen`、`RecordDateTimeField`、`RecordIconTile` 和 `TimelineRow` 统一表单、安全区、图标和时间线展示。`assets/ui` 仅存12张运行 PNG 和来源清单，`test:ui-assets` 验证真实透明通道、尺寸与哈希。首页奶量直接读取 service 的 `measurableTotalMl`；界面不另算统计。公开素材来源见 [UI 素材说明](UI-ASSETS.md)，运行示例见 `docs/screenshots/soft-rose`；截图不会作为整页图片打包。
+公共 UI 使用 `theme.ts` 的浅深色 token；`FormScreen`、`RecordDateTimeField`、`RecordIconTile` 和 `TimelineRow` 统一表单、安全区、图标和时间线展示。`assets/ui` 仅存12张运行 PNG 和来源清单，`test:ui-assets` 验证真实透明通道、尺寸与哈希。首页奶量直接读取 service 的 `measurableTotalMl`；界面不另算统计。虚构示例截图位于 `docs/screenshots/soft-rose`，制作来源见 [UI 素材说明](UI-ASSETS.md)，截图不会作为整页图片打包。
 
 ## SQLite
 
@@ -39,6 +39,14 @@ flowchart LR
 - `other`：标题和备注。
 
 迁移按版本顺序在排他事务中执行，并检查关键约束、外键和完整性。记录同时保存事件时间和当时计算的本地日期，以便跨时区恢复后仍保持历史日期归属。
+
+## 本机工作状态
+
+`baobao-today-workflow.db` 是独立 schema 1，保存五类原始表单草稿、亲喂计时和外部备份保存凭据。它不替代业务库，不进入业务备份或 CSV，也不参加当天统计与提醒。元数据损坏或写入失败时保留原文件并提示重试。
+
+草稿按宝宝、类型和原记录 ID 分组；首次落盘固定新建请求 ID。提交前冻结输入，重启时先核对业务库；编辑时核对原记录版本。页面退出和失焦等待待写队列，取消、保存、删除后不允许迟到写入复活旧内容。照片先复制到独立持久目录，正式提交仍复用原照片补偿规则。
+
+恢复前写入批次边界并暂停计时；业务替换成功后切换批次、清理旧草稿。中断状态只允许用户核对后恢复为新草稿或放弃，不能自动覆盖当前正式记录。同类旧草稿互不覆盖。亲喂计时使用时间戳与左右累计时长，暂停不累计，结束后的整分钟数仍使用现有业务字段。
 
 ## 本地照片
 
@@ -53,6 +61,8 @@ flowchart LR
 ## 导出与恢复
 
 CSV 服务从同一 SQLite 快照生成固定 33 列的表格，前 32 列保持兼容，第 33 列为 `breast_milk_amount_ml`。ZIP 备份服务从 SQLite 快照和受管照片生成完整归档，新建备份写入 `formatVersion=2`，恢复支持历史 `formatVersion=1` 和当前 `formatVersion=2`；恢复前先在暂存区校验结构、大小、哈希和业务约束，然后执行替换式恢复。详情见 [数据导出与备份](DATA-PORTABILITY.md)。
+
+完整备份外部保存采用系统目录选择器，为每次写入创建独立文件。Android Activity 重建后若现代选择器明确报告 launcher 未注册，则回退至同 SDK 的 legacy SAF 目录授权；仍需用户在系统界面选择并授权，取消不会触发回退。写入前持久化 writing 凭据，分块复制并读回整文件 SHA-256；校验通过后才标记 verified 与保存时间。取消、无法读回和失败均保留不同状态；分享不生成成功凭据。恢复新资料后不沿用旧批次的“上次保存”。
 
 ## 主题与 UI
 

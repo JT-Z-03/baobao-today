@@ -7,14 +7,17 @@ export interface OtherServiceDependencies {
   createId(): string;
   createClientRequestId(): string;
   operationCoordinator?: BackupOperationCoordinator;
+  assertCurrentDataset?(): Promise<void>;
 }
 
 export function createOtherService(
   repository: OtherRepository,
   dependencies: OtherServiceDependencies,
 ) {
-  const runMutation = <T,>(operation: () => Promise<T>) =>
-    dependencies.operationCoordinator?.runExclusive(operation) ?? operation();
+  const runMutation = <T,>(operation: () => Promise<T>) => {
+    const guarded = async () => { await dependencies.assertCurrentDataset?.(); return operation(); };
+    return dependencies.operationCoordinator?.runExclusive(guarded) ?? guarded();
+  };
   return {
     createClientRequestId: dependencies.createClientRequestId,
     getCurrentTimeMs: dependencies.now,
@@ -25,6 +28,7 @@ export function createOtherService(
       }));
     },
     getById: (id: string) => repository.getById(id),
+    getByClientRequestId: (id: string) => repository.getByClientRequestId(id),
     update: (id: string, input: OtherUpdateInput) =>
       runMutation(() => repository.update(id, input, dependencies.now())),
     delete: (id: string) => runMutation(() => repository.delete(id)),

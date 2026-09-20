@@ -17,8 +17,9 @@ export type StartSleepCommand = {
 export interface SleepRepository {
   start(command: StartSleepCommand): Promise<StartSleepResult>;
   getById(id: string): Promise<SleepRecord | null>;
+  getByClientRequestId(clientRequestId: string): Promise<SleepRecord | null>;
   getActive(): Promise<SleepRecord | null>;
-  finish(id: string, endMs: number, nowMs: number): Promise<FinishSleepResult>;
+  finish(id: string, endMs: number, nowMs: number, changes?: ActiveSleepUpdateInput): Promise<FinishSleepResult>;
   updateActive(id: string, input: ActiveSleepUpdateInput, nowMs: number): Promise<SleepRecord>;
   updateCompleted(id: string, input: CompletedSleepUpdateInput, nowMs: number): Promise<SleepRecord>;
   delete(id: string): Promise<void>;

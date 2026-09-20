@@ -9,6 +9,8 @@ type AppButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'des
 type AppButtonProps = {
   label: string;
   onPress(): void;
+  onFocus?(): void;
+  onBlur?(): void;
   variant?: AppButtonVariant;
   disabled?: boolean;
   loading?: boolean;
@@ -20,7 +22,7 @@ type AppButtonProps = {
 
 export function AppButton({
   label,
-  onPress,
+  onPress, onFocus, onBlur,
   variant = 'primary',
   disabled = false,
   loading = false,
@@ -46,6 +48,7 @@ export function AppButton({
       accessibilityState={{ ...accessibilityState, busy: loading, disabled: inactive }}
       disabled={inactive}
       onPress={onPress}
+      onFocus={onFocus} onBlur={onBlur}
       style={({ pressed }) => [
         styles.base,
         compact && styles.compact,
