@@ -295,7 +295,7 @@ export function PoopForm({
         </FormField>
 
         <FormField label="备注" optional>
-          <AppTextInput accessibilityLabel="备注" maxLength={200} multiline onChangeText={setNote} placeholder="选填" value={note} />
+          <AppTextInput accessibilityLabel="备注" maxCodePointLength={200} multiline onChangeText={setNote} placeholder="选填" value={note} />
         </FormField>
 
       </FormScreen>

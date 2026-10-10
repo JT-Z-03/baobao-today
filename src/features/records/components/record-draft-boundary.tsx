@@ -147,9 +147,13 @@ function PersistentForm({ kind, recordId, children, babyId, service, lookup }: P
     await pending.current.catch(() => undefined);
     const current = prompt ?? draft.current;
     if (current) {
-      await service.discard(current.id);
+      const result = await service.discardWithGeneration(current.id);
       if (current.kind === 'poop' && current.values.photoChange.kind === 'replace') {
         await attachments.current.remove(current.values.photoChange.source.uri).catch(() => undefined);
+      }
+      if (result.generationChanged) {
+        retryInitialization();
+        return;
       }
     }
     draft.current = null; values.current = {}; setDraftView(null); setRestoredValues({}); changed.current = false; closed.current = false;

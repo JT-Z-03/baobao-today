@@ -8,18 +8,19 @@ Android 版现已提供安装包，支持 Android 7.0 及以上。iOS 仍在计�
 
 ## 下载与安装
 
-**[下载宝宝今天 1.2.0 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.0/baobao-today-1.2.0-code8.apk)** · [发布说明与校验文件](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.0)
+**[下载宝宝今天 1.2.1 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/baobao-today-1.2.1-code9.apk)** · [SHA256SUMS.txt](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/SHA256SUMS.txt) · [发布说明](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.1)
 
 1. 在 Android 手机上下载上面的 `.apk` 文件，打开并按系统提示安装。若系统询问，允许当前浏览器或文件管理器安装此应用。
 2. 已安装旧版的用户可直接覆盖升级；不要先卸载，以免删除手机中的本地记录。
 3. 安装后直接使用，无需注册账号。宝宝资料、记录和照片保存在当前手机，可在设置中创建完整备份。
 
-GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.2.0 / code 8`，设置页显示 `1.2.0 (8)`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。
+GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.2.1 / code 9`，设置页显示 `1.2.1 (9)`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。更新描述：修复了一些已知bug。历史版本见 [Releases](https://github.com/JT-Z-03/baobao-today/releases)。
 
 ## 当前源码状态
 
-- Android **1.2.0 / versionCode 8** 包含六项新手照护体验：奶量留空与历史量快捷填写、快速补记时间、五类本机草稿及保存反馈、首页直接展示尿布次数与亲喂摘要、左右亲喂计时、完整备份直接保存与校验。
-- 105 组、621 项自动测试及 Expo Doctor 21/21 通过。使用者已确认 code 7 的功能测试无问题；code 8 另行完成同签名覆盖安装和设置页版本核对，未将其描述为全新一轮完整功能验收。
+- Android **1.2.1 / versionCode 9**：修复了一些已知bug。
+- 正式构建前，最终依赖基线的 110 组、698 项自动测试及 Expo Doctor 21/21 通过。最终 Release APK 在独立 API 36 模拟器完成同签名 code 8→9 覆盖升级、虚构记录/照片/设置/草稿保留、离线保存和原生备份恢复；此结果不代表新 APK 已完成全部真机异常流程验收。详见[测试说明](docs/TESTING.md)。
+- 1.2.0 引入的六项新手照护体验继续保留：奶量留空与历史量快捷填写、快速补记时间、五类本机草稿及保存反馈、首页直接展示尿布次数与亲喂摘要、左右亲喂计时、完整备份直接保存与校验。
 - 小便记录页直接展示尿量、颜色和备注，均为选填；取消“更多信息”的展开步骤，与大便记录页一致。
 - API 36 edge-to-edge safe-area fix included
 - Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
@@ -64,10 +65,10 @@ GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接
 
 ## 技术栈
 
-- Expo SDK 57.0.24
+- Expo SDK 57.0.27
 - React Native 0.86.3 / React 19.2.3
-- TypeScript 6.0.3 / Expo Router 57.0.22
-- Expo SQLite 57.0.3
+- TypeScript 6.0.3 / Expo Router 57.0.25
+- Expo SQLite 57.0.4
 - Jest 29.7.0 / jest-expo 57.0.5
 
 依赖的精确版本以 `package-lock.json` 为准。Expo SDK 57 的版本化文档见 [Expo SDK 57 文档](https://docs.expo.dev/versions/v57.0.0/)。
@@ -128,7 +129,7 @@ npm run start:dev-client
 
 项目使用原生模块，普通开发以 development build 为准。安装或升级原生依赖、修改 config plugin 或原生配置后，需要重新运行 `npm run android`。
 
-显示版本以 app.json 为准，package.json 与锁文件的项目版本保持同步。设置页读取实际安装包版本及构建号，显示如 1.2.0 (8)。发布时核对标签、文件名、包内版本和 SHA-256；GitHub 发布不会自动更新手机中的应用。
+显示版本以 app.json 为准，package.json 与锁文件的项目版本保持同步。设置页读取实际安装包版本及构建号，显示如 1.2.1 (9)。发布时核对标签、文件名、包内版本和 SHA-256；GitHub 发布不会自动更新手机中的应用。
 
 ## 自动测试
 
@@ -150,7 +151,7 @@ npx expo export --platform android --output-dir dist
 
 `npm run android` 使用 Expo 的本地 Android 工具链生成并编译 development build。普通开发构建不需要 release keystore，也不需要仓库外的签名配置。生成的 `android/`、Gradle 缓存和构建产物均被忽略，不应提交。
 
-维护者签名的 APK 通过 GitHub Releases 提供；签名密钥和本地构建配置不公开，APK/AAB 不提交到 Git。应用商店上架不在当前发布范围内。
+通用本地构建、签名配置校验和产物审计脚本保存在 `scripts/`。`npm run android:release` 需要自行配置本机工具链和仓库外的签名配置；仓库不包含维护者的密钥或凭据。维护者签名的 APK 通过 GitHub Releases 提供，APK/AAB 不提交到 Git。应用商店上架不在当前发布范围内。
 
 ## 当前限制
 

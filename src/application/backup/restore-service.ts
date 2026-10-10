@@ -11,7 +11,7 @@ import type {
   RestoreRepository,
 } from '@/application/ports/backup';
 
-type RestoreWarning = 'old-photo-cleanup' | 'reminder-sync' | 'app-refresh' | 'draft-state';
+type RestoreWarning = 'old-photo-cleanup' | 'reminder-sync' | 'app-refresh' | 'draft-state' | 'restore-workspace-cleanup';
 
 type Dependencies = {
   validationService: Pick<BackupValidationService, 'prepare'>;
@@ -66,6 +66,7 @@ export function createRestoreService(dependencies: Dependencies) {
       const newPhotoPaths: string[] = [];
       let committed = false;
       let workflowStarted = false;
+      const warnings: RestoreWarning[] = [];
       try {
         rechecked = await dependencies.validationService.prepare(
           selected.workspace.archiveUri,
@@ -106,7 +107,6 @@ export function createRestoreService(dependencies: Dependencies) {
 
         await dependencies.restoreRepository.replaceAll(rechecked.data, restoredPhotoMap, dependencies.now());
         committed = true;
-        const warnings: RestoreWarning[] = [];
         try { await dependencies.workflow?.end(operationId, true); }
         catch { warnings.push('draft-state'); }
         for (const oldPath of oldPhotoPaths) {
@@ -133,10 +133,17 @@ export function createRestoreService(dependencies: Dependencies) {
         }
         throw error;
       } finally {
-        if (rechecked) await rechecked.dispose();
+        const cleanup = rechecked ? [rechecked] : [];
         if (prepared === selected) {
-          await selected.dispose();
           prepared = null;
+          cleanup.push(selected);
+        }
+        for (const item of cleanup) {
+          try { await item.dispose(); }
+          catch {
+            // Startup staging cleanup can retry; never replace the commit result or original error.
+            if (committed && !warnings.includes('restore-workspace-cleanup')) warnings.push('restore-workspace-cleanup');
+          }
         }
       }
     });

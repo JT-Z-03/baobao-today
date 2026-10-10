@@ -429,7 +429,7 @@ export function FeedingForm({
         <FormField label="备注" optional error={fieldErrors.note}>
           <AppTextInput
             accessibilityLabel="备注"
-            maxLength={200}
+            maxCodePointLength={200}
             multiline
             onChangeText={(value) => {
               setNote(value);

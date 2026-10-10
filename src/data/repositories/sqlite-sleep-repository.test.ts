@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { MIGRATIONS } from '@/data/database/migrations';
 import { IdempotencyConflictError } from '@/domain/records/idempotency';
+import { SleepValidationError } from '@/domain/sleep/sleep-validation';
 
 import {
   SQLiteSleepRepository,
@@ -72,6 +73,45 @@ describe('SQLiteSleepRepository host SQLite integration', () => {
     await expect(repository.start({ ...command, id: 'conflict', input: { startMs: startMs - 1, note: null } }))
       .rejects.toBeInstanceOf(IdempotencyConflictError);
   });
+
+  test.each(['记'.repeat(199) + '🙂', '🙂'.repeat(200)])(
+    'persists 200 code points and rejects 201 atomically for every sleep write',
+    async (note) => {
+      const tooLong = note + '🙂';
+      await expect(repository.start({
+        id: 'rejected', clientRequestId: 'rejected-request', nowMs: startMs,
+        input: { startMs, note: tooLong },
+      })).rejects.toBeInstanceOf(SleepValidationError);
+      expect(sqlite.prepare('SELECT COUNT(*) count FROM records').get()).toEqual({ count: 0 });
+      await repository.start({ id: 'sleep-note', clientRequestId: 'note-request', nowMs: startMs,
+        input: { startMs, note } });
+      expect(await repository.getById('sleep-note')).toMatchObject({ note, status: 'sleeping' });
+
+      const original = await repository.getById('sleep-note');
+      await expect(repository.updateActive('sleep-note', { startMs, note: tooLong }, endMs))
+        .rejects.toBeInstanceOf(SleepValidationError);
+      expect(await repository.getById('sleep-note')).toEqual(original);
+      const editedNote = [...note].reverse().join('');
+      await repository.updateActive('sleep-note', { startMs, note: ` ${editedNote} ` }, endMs);
+      expect(await repository.getById('sleep-note')).toMatchObject({ note: editedNote, status: 'sleeping' });
+
+      const beforeFinish = await repository.getById('sleep-note');
+      await expect(repository.finish('sleep-note', endMs, endMs, { startMs, note: tooLong }))
+        .rejects.toBeInstanceOf(SleepValidationError);
+      expect(await repository.getById('sleep-note')).toEqual(beforeFinish);
+      await repository.finish('sleep-note', endMs, endMs, { startMs, note });
+      expect(await repository.getById('sleep-note')).toMatchObject({ note, status: 'completed', endMs });
+
+      const completed = await repository.getById('sleep-note');
+      await expect(repository.updateCompleted('sleep-note', { startMs, endMs, note: tooLong }, endMs))
+        .rejects.toBeInstanceOf(SleepValidationError);
+      expect(await repository.getById('sleep-note')).toEqual(completed);
+      await repository.updateCompleted('sleep-note', { startMs, endMs, note: editedNote }, endMs);
+      expect(await repository.getById('sleep-note')).toMatchObject({ note: editedNote, status: 'completed', endMs });
+      expect(sqlite.prepare('SELECT note FROM records WHERE id=?').get('sleep-note'))
+        .toEqual({ note: editedNote });
+    },
+  );
 
   test('returns the current active sleep when another request races with the unique index', async () => {
     await repository.start({ id: 'sleep-1', clientRequestId: 'request-1', nowMs: startMs, input: { startMs, note: null } });

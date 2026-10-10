@@ -1,7 +1,7 @@
 import DateTimePicker, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 import { ThemedText } from '@/components/themed-text';
@@ -96,9 +96,16 @@ export function RecordsScreen() {
 
   const hasActiveSleep = records.some((record) => record.type === 'sleep' && record.status === 'sleeping');
   useFocusEffect(useCallback(() => {
-    if (!hasActiveSleep) return;
-    const timer = setInterval(() => setRefreshedAtMs(Date.now()), 60_000);
-    return () => clearInterval(timer);
+    const refreshClock = () => {
+      const nowMs = Date.now();
+      setToday(toLocalDateKey(nowMs));
+      if (hasActiveSleep) setRefreshedAtMs(nowMs);
+    };
+    const timer = setInterval(refreshClock, 60_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshClock();
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
   }, [hasActiveSleep]));
 
   if (!feedingService || !poopService || !peeService || !sleepService || !otherService) return null;

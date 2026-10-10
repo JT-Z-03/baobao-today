@@ -4,6 +4,7 @@ describe('sleep timeline projection', () => {
   test('projects cross-day start and end events onto their own local dates', () => {
     const record = {
       id: 'sleep-record-1',
+      recordDate: '2026-07-10',
       startMs: new Date(2026, 6, 10, 23, 0).getTime(),
       endMs: new Date(2026, 6, 11, 2, 0).getTime(),
       status: 'completed' as const,
@@ -22,7 +23,7 @@ describe('sleep timeline projection', () => {
 
     expect(
       projectSleepTimeline(
-        { id: 'sleep-record-2', startMs, endMs: null, status: 'sleeping' },
+        { id: 'sleep-record-2', recordDate: '2026-07-10', startMs, endMs: null, status: 'sleeping' },
         '2026-07-10',
       ),
     ).toEqual([{ recordId: 'sleep-record-2', kind: 'sleep-start', occurrenceTimeMs: startMs }]);
@@ -31,6 +32,7 @@ describe('sleep timeline projection', () => {
   test('orders same-day occurrences independently while retaining one source id', () => {
     const record = {
       id: 'sleep-record-3',
+      recordDate: '2026-07-11',
       startMs: new Date(2026, 6, 11, 1, 0).getTime(),
       endMs: new Date(2026, 6, 11, 3, 0).getTime(),
       status: 'completed' as const,
@@ -40,6 +42,28 @@ describe('sleep timeline projection', () => {
       { recordId: record.id, kind: 'sleep-start', occurrenceTimeMs: record.startMs },
     ]);
   });
+
+  test.each([
+    { recordDate: '2026-07-10', startHour: 1 },
+    { recordDate: '2026-07-12', startHour: 23 },
+  ])(
+    'keeps a restored sleep start on saved date $recordDate when the current local date differs',
+    ({ recordDate, startHour }) => {
+      const startMs = new Date(2026, 6, 11, startHour, 0).getTime();
+      const endMs = startMs + 20 * 60_000;
+      for (const record of [
+        { id: 'restored-completed', recordDate, startMs, endMs, status: 'completed' as const },
+        { id: 'restored-active', recordDate, startMs, endMs: null, status: 'sleeping' as const },
+      ]) {
+        expect(projectSleepTimeline(record, recordDate)).toEqual([
+          { recordId: record.id, kind: 'sleep-start', occurrenceTimeMs: startMs },
+        ]);
+        expect(projectSleepTimeline(record, '2026-07-11')).toEqual(record.status === 'completed'
+          ? [{ recordId: record.id, kind: 'sleep-end', occurrenceTimeMs: endMs }]
+          : []);
+      }
+    },
+  );
 
   test('sorts source records including other by occurrence time without changing their types', () => {
     const records = [

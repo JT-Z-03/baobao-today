@@ -38,11 +38,12 @@ export async function runNativeDatabaseAcceptanceAction(
           event_time_ms, record_date, sort_time_ms,
           created_at_ms, updated_at_ms,
           sleep_start_ms, sleep_end_ms, sleep_status
-        ) VALUES (?, ?, ?, 'sleep', NULL, ?, ?, ?, ?, ?, NULL, 'sleeping')
+        ) VALUES (?, ?, ?, 'sleep', ?, ?, ?, ?, ?, ?, NULL, 'sleeping')
       `,
       ACCEPTANCE_SLEEP_ID,
       'acceptance-business-sleeping-request',
       'a'.repeat(64),
+      nowMs,
       derived.recordDate,
       derived.sortTimeMs,
       nowMs,

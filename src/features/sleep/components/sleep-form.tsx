@@ -50,6 +50,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ErrorField, string>>>({});
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [finishCapturedAtMs, setFinishCapturedAtMs] = useState<number | null>(null);
   const [shortcutField, setShortcutField] = useState<'start' | 'end'>('start');
 
   const clearFieldError = (field: ErrorField) => setFieldErrors((current) => {
@@ -79,7 +80,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
       onActivate={() => setShortcutField(field)}
       valueMs={value}
       error={fieldErrors[field]}
-      maximumDate={new Date(nowMs)}
+      maximumDate={new Date(Math.max(nowMs, finishCapturedAtMs ?? nowMs))}
       dateAccessibilityLabel={field === 'start' ? '修改开始日期' : '修改结束日期'}
       timeAccessibilityLabel={field === 'start' ? '修改开始时间' : '修改结束时间'}
       onChange={(next) => {
@@ -100,7 +101,9 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
             disabled={saving}
             label="醒了"
             onPress={() => {
-              setEndMs(nowMs);
+              const capturedAtMs = Date.now();
+              setEndMs(capturedAtMs);
+              setFinishCapturedAtMs(capturedAtMs);
               clearFieldError('end');
               setConfirmingFinish(true); setShortcutField('end');
             }}
@@ -121,6 +124,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
               label="取消"
               onPress={() => {
                 setConfirmingFinish(false);
+                setFinishCapturedAtMs(null);
                 setEndMs(null);
                 clearFieldError('end');
                 setErrorMessage(null);
@@ -179,7 +183,7 @@ export function SleepForm({ mode, initialValue, nowMs, headerSubtitle, onSave, o
         <AppTextInput
           accessibilityLabel="睡眠备注"
           error={fieldErrors.note}
-          maxLength={200}
+          maxCodePointLength={200}
           multiline
           onChangeText={(value) => { setNote(value); clearFieldError('note'); }}
           placeholder="选填"

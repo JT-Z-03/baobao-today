@@ -3,6 +3,16 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { SleepValidationError } from '@/domain/sleep/sleep-validation';
 import { createSleepActionLock, SleepForm } from './sleep-form';
 
+jest.mock('@react-native-community/datetimepicker', () => {
+  const React = jest.requireActual('react');
+  const { View } = jest.requireActual('react-native');
+  return function MockDateTimePicker(props: { maximumDate: Date }) {
+    return React.createElement(View, { ...props, testID: 'sleep-date-picker' });
+  };
+});
+
+afterEach(() => jest.restoreAllMocks());
+
 describe('sleep form submission lock', () => {
   test('ignores a second action while the first save is pending', async () => {
     const lock = createSleepActionLock();
@@ -20,6 +30,7 @@ describe('sleep form submission lock', () => {
   test('opens an editable finish confirmation before completing an active sleep', async () => {
     const startMs = new Date(2026, 6, 11, 1, 0).getTime();
     const nowMs = new Date(2026, 6, 11, 2, 0).getTime();
+    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
     const onFinish = jest.fn(async () => undefined);
     const screen = await render(
       <SleepForm
@@ -37,6 +48,63 @@ describe('sleep form submission lock', () => {
     expect(screen.queryByLabelText('保存睡眠修改')).toBeNull();
     await act(async () => { fireEvent.press(screen.getByLabelText('确认结束睡眠')); });
     await waitFor(() => expect(onFinish).toHaveBeenCalledWith(nowMs, { startMs, note: null }));
+  });
+
+  test('captures the click time across midnight and preserves it while confirmation waits', async () => {
+    const startMs = new Date(2026, 6, 10, 23, 0).getTime();
+    const cachedNowMs = new Date(2026, 6, 10, 23, 59, 50).getTime();
+    const clickMs = new Date(2026, 6, 11, 0, 0, 10).getTime();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(clickMs);
+    const onFinish = jest.fn(async () => undefined);
+    const screen = await render(<SleepForm mode="active"
+      initialValue={{ startMs, endMs: null, note: null }} nowMs={cachedNowMs}
+      onSave={jest.fn()} onFinish={onFinish} />);
+    await fireEvent.press(screen.getByLabelText('宝宝醒了'));
+    await fireEvent.press(screen.getByLabelText('修改结束日期'));
+    expect(screen.getByTestId('sleep-date-picker').props.maximumDate).toEqual(new Date(clickMs));
+    clock.mockReturnValue(clickMs + 5 * 60_000);
+    await screen.rerender(<SleepForm mode="active"
+      initialValue={{ startMs, endMs: null, note: null }} nowMs={clickMs + 5 * 60_000}
+      onSave={jest.fn()} onFinish={onFinish} />);
+    await fireEvent.press(screen.getByLabelText('确认结束睡眠'));
+    expect(onFinish).toHaveBeenCalledWith(clickMs, { startMs, note: null });
+  });
+
+  test('preserves a manually selected finish time and takes a fresh click after cancelling', async () => {
+    const startMs = new Date(2026, 6, 11, 1, 0).getTime();
+    const cachedNowMs = startMs + 60 * 60_000;
+    const clickMs = cachedNowMs + 20_000;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(clickMs);
+    const onFinish = jest.fn(async () => undefined);
+    const screen = await render(<SleepForm mode="active"
+      initialValue={{ startMs, endMs: null, note: null }} nowMs={cachedNowMs}
+      onSave={jest.fn()} onFinish={onFinish} />);
+    await fireEvent.press(screen.getByLabelText('宝宝醒了'));
+    await fireEvent.press(screen.getByLabelText('取消结束睡眠'));
+    clock.mockReturnValue(clickMs + 60_000);
+    await fireEvent.press(screen.getByLabelText('宝宝醒了'));
+    await fireEvent.press(screen.getByLabelText('醒来时间：10分钟前'));
+    const selectedMs = clickMs + 60_000 - 10 * 60_000;
+    clock.mockReturnValue(clickMs + 5 * 60_000);
+    await fireEvent.press(screen.getByLabelText('确认结束睡眠'));
+    expect(onFinish).toHaveBeenCalledWith(selectedMs, { startMs, note: null });
+  });
+
+  test('takes a fresh timestamp when finish confirmation is cancelled and reopened', async () => {
+    const startMs = new Date(2026, 6, 11, 1, 0).getTime();
+    const cachedNowMs = startMs + 60 * 60_000;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(cachedNowMs + 20_000);
+    const onFinish = jest.fn(async () => undefined);
+    const screen = await render(<SleepForm mode="active"
+      initialValue={{ startMs, endMs: null, note: null }} nowMs={cachedNowMs}
+      onSave={jest.fn()} onFinish={onFinish} />);
+    await fireEvent.press(screen.getByLabelText('宝宝醒了'));
+    await fireEvent.press(screen.getByLabelText('取消结束睡眠'));
+    const reopenedMs = cachedNowMs + 80_000;
+    clock.mockReturnValue(reopenedMs);
+    await fireEvent.press(screen.getByLabelText('宝宝醒了'));
+    await fireEvent.press(screen.getByLabelText('确认结束睡眠'));
+    expect(onFinish).toHaveBeenCalledWith(reopenedMs, { startMs, note: null });
   });
 
   test('cancel finish keeps the active sleep and unsaved note unchanged', async () => {

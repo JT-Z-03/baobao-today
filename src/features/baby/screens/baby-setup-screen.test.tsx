@@ -41,4 +41,26 @@ describe('BabySetupScreen', () => {
     await waitFor(() => expect(screen.getByText('宝宝资料保存失败，请重试。')).toBeTruthy());
     expect(screen.queryByText(/SQLite|\/data\//)).toBeNull();
   });
+
+  test('saves a twenty-code-point nickname including a supplementary-plane character', async () => {
+    const saveInitialBabyProfile = jest.fn(async () => undefined);
+    (useAppState as jest.Mock).mockReturnValue({ saveInitialBabyProfile });
+    const screen = await render(<BabySetupScreen />);
+    const name = '宝'.repeat(19) + '🍼';
+    expect(screen.getByLabelText('宝宝昵称').props.maxLength).toBe(40);
+    await fireEvent.changeText(screen.getByLabelText('宝宝昵称'), name + '多');
+    await fireEvent.press(screen.getByLabelText('开始记录'));
+    await waitFor(() => expect(saveInitialBabyProfile).toHaveBeenCalledWith(expect.objectContaining({ name })));
+  });
+
+  test('submits a full-selection overflowing paste without retaining the selected old suffix', async () => {
+    const saveInitialBabyProfile = jest.fn(async () => undefined);
+    (useAppState as jest.Mock).mockReturnValue({ saveInitialBabyProfile });
+    const screen = await render(<BabySetupScreen />);
+    await fireEvent.changeText(screen.getByLabelText('宝宝昵称'), '旧'.repeat(19) + '🍼');
+    await fireEvent(screen.getByLabelText('宝宝昵称'), 'selectionChange', { nativeEvent: { selection: { start: 0, end: 21 } } });
+    await fireEvent.changeText(screen.getByLabelText('宝宝昵称'), '新'.repeat(25) + '🍼');
+    await fireEvent.press(screen.getByLabelText('开始记录'));
+    await waitFor(() => expect(saveInitialBabyProfile).toHaveBeenCalledWith(expect.objectContaining({ name: '新'.repeat(20) })));
+  });
 });

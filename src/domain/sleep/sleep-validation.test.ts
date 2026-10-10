@@ -14,6 +14,26 @@ describe('sleep validation', () => {
       .toEqual({ startMs: nowMs, note: 'nap' });
   });
 
+  test.each(['记'.repeat(199) + '🙂', '🙂'.repeat(200)])(
+    'accepts 200 code points for active and completed sleep notes',
+    (note) => {
+      expect(normalizeAndValidateSleepStartInput({ startMs: nowMs - 1, note: ` ${note} ` }, nowMs).note)
+        .toBe(note);
+      expect(normalizeAndValidateCompletedSleepInput({ startMs: nowMs - 1, endMs: nowMs, note }, nowMs).note)
+        .toBe(note);
+    },
+  );
+
+  test.each(['记'.repeat(200) + '🙂', '🙂'.repeat(201)])(
+    'rejects 201 code points for active and completed sleep notes',
+    (note) => {
+      expect(() => normalizeAndValidateSleepStartInput({ startMs: nowMs - 1, note }, nowMs))
+        .toThrow(SleepValidationError);
+      expect(() => normalizeAndValidateCompletedSleepInput({ startMs: nowMs - 1, endMs: nowMs, note }, nowMs))
+        .toThrow(SleepValidationError);
+    },
+  );
+
   test('allows five seconds of clock tolerance and rejects beyond it', () => {
     expect(normalizeAndValidateSleepStartInput({ startMs: nowMs + 5_000, note: null }, nowMs).startMs)
       .toBe(nowMs + 5_000);

@@ -1,4 +1,5 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 
@@ -8,6 +9,7 @@ import type { FeedingReminderStatus } from '@/application/reminders/feeding-remi
 import { SettingsScreen } from './settings-screen';
 
 const mockPush = jest.fn();
+let mockFocused = true;
 
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: jest.fn() }));
 jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
@@ -17,7 +19,10 @@ jest.mock('expo-application', () => ({ nativeApplicationVersion: '5.6.7', native
 jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
-    useFocusEffect: (callback: () => void | (() => void)) => React.useEffect(callback, [callback]),
+    useFocusEffect: (callback: () => void | (() => void)) => {
+      const focused = mockFocused;
+      React.useEffect(() => focused ? callback() : undefined, [callback, focused]);
+    },
     useRouter: () => ({ push: mockPush }),
   };
 });
@@ -55,6 +60,7 @@ describe('SettingsScreen feeding reminders', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     mockPush.mockClear();
+    mockFocused = true;
   });
 
   test('reads status on focus without enabling or requesting a reminder', async () => {
@@ -212,5 +218,84 @@ describe('SettingsScreen feeding reminders', () => {
     await fireEvent.press(screen.getByLabelText('收起提醒说明'));
     expect(screen.queryByLabelText('安排1分钟测试提醒')).toBeNull();
     expect(screen.queryByLabelText('收起开发验收工具')).toBeNull();
+  });
+
+  test('refreshes granted and revoked notification status on foreground return', async () => {
+    const listeners = new Set<(state: AppStateStatus) => void>();
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      listeners.add(listener);
+      return { remove: () => { listeners.delete(listener); } };
+    });
+    const reminderService = createReminderService({ ...disabledStatus, permissionStatus: 'denied' });
+    const { screen } = await renderScreen(reminderService);
+    await waitFor(() => expect(screen.getByText('系统通知：未开启')).toBeTruthy());
+    reminderService.syncFeedingReminder.mockResolvedValue({ ...disabledStatus, permissionStatus: 'granted' });
+    await act(async () => { for (const listener of listeners) listener('active'); });
+    expect(screen.getByText('系统通知：已允许')).toBeTruthy();
+    reminderService.syncFeedingReminder.mockResolvedValue({ ...disabledStatus, permissionStatus: 'denied' });
+    await act(async () => { for (const listener of listeners) listener('active'); });
+    expect(screen.getByText('系统通知：未开启')).toBeTruthy();
+    expect(reminderService.setInterval).not.toHaveBeenCalled();
+  });
+
+  test('reports a failed foreground sync and ignores a pending result after the route loses focus', async () => {
+    const listeners = new Set<(state: AppStateStatus) => void>();
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      listeners.add(listener);
+      return { remove: () => { listeners.delete(listener); } };
+    });
+    const { screen, reminderService } = await renderScreen();
+    await waitFor(() => expect(screen.getByText('系统通知：未请求')).toBeTruthy());
+    reminderService.syncFeedingReminder.mockRejectedValueOnce(new Error('native failure'));
+    await act(async () => { for (const listener of listeners) listener('active'); });
+    expect(screen.getByText('提醒更新失败，请重新同步。')).toBeTruthy();
+    let resolveSync!: (value: FeedingReminderStatus) => void;
+    reminderService.syncFeedingReminder.mockImplementationOnce(() => new Promise((resolve) => { resolveSync = resolve; }));
+    await act(async () => { for (const listener of listeners) listener('active'); });
+    mockFocused = false;
+    await screen.rerender(<SettingsScreen />);
+    await act(async () => resolveSync({ ...disabledStatus, permissionStatus: 'granted' }));
+    expect(screen.queryByText('系统通知：已允许')).toBeNull();
+    expect(screen.getByText('提醒更新失败，请重新同步。')).toBeTruthy();
+    const calls = reminderService.syncFeedingReminder.mock.calls.length;
+    await act(async () => { for (const listener of listeners) listener('active'); });
+    expect(reminderService.syncFeedingReminder).toHaveBeenCalledTimes(calls);
+  });
+
+  test('updates the birth day across midnight while staying in the foreground without resyncing reminders', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date(2026, 5, 20, 23, 59, 30));
+      const { screen, reminderService } = await renderScreen();
+      expect(screen.getByText('出生第 1 天')).toBeTruthy();
+      await act(async () => { jest.advanceTimersByTime(60_000); });
+      expect(screen.getByText('出生第 2 天')).toBeTruthy();
+      expect(reminderService.syncFeedingReminder).toHaveBeenCalledTimes(1);
+      await screen.unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('updates the birth day when returning from the background before the next clock tick', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date(2026, 5, 20, 23, 59, 30));
+      const listeners = new Set<(state: AppStateStatus) => void>();
+      jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+        listeners.add(listener);
+        return { remove: () => { listeners.delete(listener); } };
+      });
+      const { screen } = await renderScreen();
+      expect(screen.getByText('出生第 1 天')).toBeTruthy();
+      await act(async () => { for (const listener of listeners) listener('background'); });
+      jest.setSystemTime(new Date(2026, 5, 22, 0, 0, 30));
+      await act(async () => { for (const listener of listeners) listener('active'); });
+      expect(screen.getByText('出生第 3 天')).toBeTruthy();
+      await screen.unmount();
+      expect(listeners.size).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

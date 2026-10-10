@@ -166,7 +166,7 @@ export function PeeForm({
         <FormField label="备注" optional>
           <AppTextInput
             accessibilityLabel="备注"
-            maxLength={200}
+            maxCodePointLength={200}
             multiline
             onChangeText={setNote}
             placeholder="选填"

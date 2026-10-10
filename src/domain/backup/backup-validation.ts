@@ -45,7 +45,8 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[], labe
 }
 
 function text(value: unknown, label: string, min: number, max: number) {
-  if (typeof value !== 'string' || value.length < min || value.length > max) fail('invalid-text', `${label}无效`);
+  const length = typeof value === 'string' ? [...value].length : -1;
+  if (typeof value !== 'string' || length < min || length > max) fail('invalid-text', `${label}无效`);
   return value;
 }
 

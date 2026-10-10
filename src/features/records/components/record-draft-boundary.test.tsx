@@ -7,6 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { discardDeletedDraft } from '../discard-deleted-draft';
 import { createRecordDraftService } from '@/application/drafts/record-draft-service';
 import { emptyWorkflowState, type WorkflowStateStore } from '@/application/ports/workflow-state';
+import { createOtherService } from '@/application/other/other-service';
+import type { OtherRepository } from '@/application/ports/other-repository';
 
 const mockBack = jest.fn(); const mockDispatch = jest.fn();
 const mockPersist = jest.fn(); const mockRemove = jest.fn(async () => undefined);
@@ -33,7 +35,7 @@ function setup() {
     otherService: { getById: async () => saved, getByClientRequestId: async () => saved } };
   const onSave = jest.fn(async (input, requestId) => { saved = { ...input, id: 'saved', updatedAtMs: 1000, clientRequestId: requestId }; });
   const form = () => <RecordDraftBoundary kind="other"><OtherForm initialInput={{ eventTimeMs: 50, title: '', note: null }} clientRequestId="unused" onSave={onSave} /></RecordDraftBoundary>;
-  return { drafts, form, onSave };
+  return { drafts, store, form, onSave };
 }
 beforeEach(() => jest.clearAllMocks());
 
@@ -105,12 +107,96 @@ test('delete first flushes unsaved edits so final cleanup cannot leave a resurre
 
 test('discarding a resumed draft remounts empty fields and never resurrects its content', async () => {
   const { drafts, form } = setup();
+  const retry = jest.fn(); mockApp.retryInitialization = retry;
   await drafts.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 50, title: '旧内容', note: '旧备注' });
   const screen = await render(form());
   await fireEvent.press(await screen.findByText('放弃草稿'));
   expect((await screen.findByLabelText('标题')).props.value).toBe('');
   await act(async () => { await screen.unmount(); });
   expect((await drafts.list()).drafts).toEqual([]);
+  expect(retry).not.toHaveBeenCalled();
+});
+
+test('R03: abandoning the last quarantined draft refreshes dataset services and permits guarded CRUD', async () => {
+  const { drafts, store } = setup();
+  await drafts.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 50, title: '旧草稿', note: '' });
+  await drafts.beginRestore('interrupted');
+  let saved: Awaited<ReturnType<OtherRepository['getById']>> = null;
+  const repository: OtherRepository = {
+    create: jest.fn(async ({ id, clientRequestId, input, nowMs }) => {
+      saved = { ...input, id, type: 'other', clientRequestId, createPayloadHash: 'a'.repeat(64),
+        recordDate: '2026-07-10', sortTimeMs: input.eventTimeMs, createdAtMs: nowMs, updatedAtMs: nowMs };
+      return saved;
+    }),
+    getById: async () => saved, getByClientRequestId: async () => saved,
+    update: jest.fn(async (_id, input, nowMs) => { saved = { ...saved!, ...input, updatedAtMs: nowMs }; return saved; }),
+    delete: jest.fn(async () => { saved = null; }), listByDate: async () => saved ? [saved] : [],
+  };
+  const bind = (generation: string) => createOtherService(repository, {
+    now: () => 100, createId: () => 'record', createClientRequestId: () => 'request',
+    assertCurrentDataset: () => drafts.assertGeneration(generation),
+  });
+  let current = bind((await store.read()).generation); const obsolete = current;
+  mockApp.otherService = current;
+  const retry = jest.fn(async () => {
+    current = bind((await store.read()).generation); mockApp.otherService = current;
+  });
+  mockApp.retryInitialization = retry;
+  const form = (generation = 'old') => <RecordDraftBoundary key={generation} kind="other"><OtherForm
+    initialInput={{ eventTimeMs: 50, title: '', note: null }} clientRequestId="unused"
+    onSave={async (input, requestId) => {
+      if (!requestId) throw new Error('A durable request ID is required');
+      await current.create(input, requestId);
+    }} /></RecordDraftBoundary>;
+  const screen = await render(form());
+  await fireEvent.press(await screen.findByText('放弃草稿'));
+  await waitFor(() => expect(retry).toHaveBeenCalledTimes(1));
+  await waitFor(async () => expect((await store.read()).restore).toBeNull());
+  // Provider reinitialization replaces the route stack and its captured dataset services.
+  await screen.rerender(form((await store.read()).generation));
+  await fireEvent.changeText(await screen.findByLabelText('标题'), '新记录');
+  await fireEvent.press(screen.getByLabelText('保存其他记录'));
+  await waitFor(() => expect(repository.create).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+  await expect(current.update('record', { eventTimeMs: 50, title: '更新后', note: null })).resolves.toMatchObject({ title: '更新后' });
+  await expect(current.delete('record')).resolves.toBeUndefined();
+  await expect(obsolete.create({ eventTimeMs: 50, title: '迟到写入', note: null }, 'stale')).rejects.toThrow('资料已恢复');
+  expect(repository.create).toHaveBeenCalledTimes(1);
+  expect(repository.update).toHaveBeenCalledTimes(1); expect(repository.delete).toHaveBeenCalledTimes(1);
+});
+
+test('R03: abandoning a non-final quarantined draft keeps the pending boundary without reinitializing', async () => {
+  const { drafts, store, form } = setup();
+  const retry = jest.fn(); mockApp.retryInitialization = retry;
+  await drafts.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 50, title: '旧草稿', note: '' });
+  await drafts.create({ babyId: 'baby', kind: 'pee' }, { eventTimeMs: 50, color: null, amount: null, note: '' });
+  await drafts.beginRestore('interrupted'); const generation = (await store.read()).generation;
+  const screen = await render(form());
+  await fireEvent.press(await screen.findByText('放弃草稿'));
+  await screen.findByLabelText('标题');
+  expect(retry).not.toHaveBeenCalled();
+  expect((await store.read()).generation).toBe(generation);
+  expect((await store.read()).restore?.id).toBe('interrupted');
+});
+
+test.each(['ordinary', 'non-final isolated'])('R15: abandoning a %s draft does not depend on an extra read or refresh services', async (kind) => {
+  const { drafts, store, form } = setup();
+  const retry = jest.fn(); mockApp.retryInitialization = retry;
+  await drafts.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 50, title: '待放弃草稿', note: '' });
+  if (kind === 'non-final isolated') {
+    await drafts.create({ babyId: 'baby', kind: 'pee' }, { eventTimeMs: 50, color: null, amount: null, note: '' });
+    await drafts.beginRestore('interrupted');
+  }
+  const screen = await render(form());
+  await screen.findByText('放弃草稿');
+  const read = jest.spyOn(store, 'read').mockRejectedValue(new Error('read unavailable'));
+  await fireEvent.press(screen.getByText('放弃草稿'));
+  expect((await screen.findByLabelText('标题')).props.value).toBe('');
+  expect(read).not.toHaveBeenCalled(); expect(retry).not.toHaveBeenCalled(); read.mockRestore();
+  const state = await store.read();
+  expect(state.generation).toBe('dataset');
+  expect(state.restore?.id ?? null).toBe(kind === 'non-final isolated' ? 'interrupted' : null);
+  expect(Object.values(state.drafts).map((item) => item.kind)).toEqual(kind === 'non-final isolated' ? ['pee'] : []);
 });
 
 test('formal save failure retains inputs and the draft for another attempt', async () => {

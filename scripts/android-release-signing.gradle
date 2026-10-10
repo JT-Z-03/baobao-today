@@ -1,0 +1,39 @@
+import java.util.Properties
+
+def keyPropertiesPath = System.getenv('BAOBAO_ANDROID_KEY_PROPERTIES')
+if (!keyPropertiesPath) {
+    throw new GradleException('BAOBAO_ANDROID_KEY_PROPERTIES is required for release signing')
+}
+
+def keyPropertiesFile = file(keyPropertiesPath)
+if (!keyPropertiesFile.isFile()) {
+    throw new GradleException('Configured Android release key.properties file does not exist')
+}
+
+def keyProperties = new Properties()
+keyPropertiesFile.withInputStream { input -> keyProperties.load(input) }
+
+['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { name ->
+    if (!keyProperties.getProperty(name)) {
+        throw new GradleException("Android release key.properties is missing ${name}")
+    }
+}
+
+def configuredStoreFile = new File(keyProperties.getProperty('storeFile'))
+if (!configuredStoreFile.isAbsolute()) {
+    configuredStoreFile = new File(keyPropertiesFile.parentFile, keyProperties.getProperty('storeFile'))
+}
+if (configuredStoreFile.name.equalsIgnoreCase('debug.keystore')) {
+    throw new GradleException('debug.keystore cannot be used for Android release signing')
+}
+if (keyProperties.getProperty('keyAlias').equalsIgnoreCase('androiddebugkey')) {
+    throw new GradleException('androiddebugkey cannot be used for Android release signing')
+}
+
+android.signingConfigs.create('baobaoRelease') {
+    storeFile configuredStoreFile
+    storePassword keyProperties.getProperty('storePassword')
+    keyAlias keyProperties.getProperty('keyAlias')
+    keyPassword keyProperties.getProperty('keyPassword')
+}
+android.buildTypes.release.signingConfig android.signingConfigs.baobaoRelease

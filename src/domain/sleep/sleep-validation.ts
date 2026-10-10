@@ -14,7 +14,7 @@ export class SleepValidationError extends Error {
 
 function normalizeNote(note: string | null) {
   const normalized = note?.trim() || null;
-  if (normalized && normalized.length > 200) {
+  if (normalized && [...normalized].length > 200) {
     throw new SleepValidationError('备注不能超过 200 个字符');
   }
   return normalized;

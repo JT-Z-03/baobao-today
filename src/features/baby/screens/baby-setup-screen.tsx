@@ -74,7 +74,7 @@ export function BabySetupScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               error={errorMessage}
-              maxLength={20}
+              maxCodePointLength={20}
               onChangeText={setName}
               placeholder="小宝"
               returnKeyType="done"

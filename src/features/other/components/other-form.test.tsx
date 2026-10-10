@@ -30,6 +30,15 @@ describe('OtherForm', () => {
     await waitFor(() => expect(screen.getByText('请填写标题')).toBeTruthy());
   });
 
+  test('submits a full-selection note paste without retaining the selected old suffix', async () => {
+    const onSave = jest.fn(async () => undefined);
+    const screen = await render(<OtherForm initialInput={{ ...initialInput, title: '虚构事项', note: '旧'.repeat(199) + '🍼' }} clientRequestId="stable" onSave={onSave} />);
+    await fireEvent(screen.getByLabelText('备注'), 'selectionChange', { nativeEvent: { selection: { start: 0, end: 201 } } });
+    await fireEvent.changeText(screen.getByLabelText('备注'), '新'.repeat(205) + '🍼');
+    await fireEvent.press(screen.getByLabelText('保存其他记录'));
+    expect(onSave).toHaveBeenCalledWith({ ...initialInput, title: '虚构事项', note: '新'.repeat(200) }, 'stable');
+  });
+
   test('submission lock ignores a second save while the first is pending', async () => {
     const lock = createOtherSubmissionLock();
     let finish!: () => void;

@@ -65,6 +65,22 @@ describe('backup business data validation', () => {
     expect(validateBackupData(validData())).toEqual(validData());
   });
 
+  test('accepts domain-valid Unicode nickname and notes at code-point boundaries', () => {
+    const value = validData();
+    value.baby.name = '宝'.repeat(19) + '🍼';
+    for (const record of value.records) record.note = '记'.repeat(199) + '🍼';
+    expect(validateBackupData(value)).toEqual(value);
+  });
+
+  test('rejects text beyond the existing code-point limits', () => {
+    const value = validData();
+    value.baby.name = '🍼'.repeat(21);
+    expect(() => validateBackupData(value)).toThrow(BackupValidationError);
+    value.baby.name = '小宝';
+    value.records[0].note = '🍼'.repeat(201);
+    expect(() => validateBackupData(value)).toThrow(BackupValidationError);
+  });
+
   test('normalizes valid version one feeding records with an empty bottled amount', () => {
     const value = validVersionOneData();
     expect(validateBackupData(value, 1).records[0]).toMatchObject({

@@ -1,8 +1,8 @@
 import { toLocalDateKey } from '@/domain/date/local-date';
 
 export type SleepTimelineSource =
-  | { id: string; startMs: number; endMs: number; status: 'completed' }
-  | { id: string; startMs: number; endMs: null; status: 'sleeping' };
+  | { id: string; recordDate: string; startMs: number; endMs: number; status: 'completed' }
+  | { id: string; recordDate: string; startMs: number; endMs: null; status: 'sleeping' };
 
 export type SleepTimelineEvent = {
   recordId: string;
@@ -23,7 +23,7 @@ export function sortRecordsByOccurrence<T extends OccurrenceSortable>(records: r
 
 export function projectSleepTimeline(record: SleepTimelineSource, dateKey: string) {
   const events: SleepTimelineEvent[] = [];
-  if (toLocalDateKey(record.startMs) === dateKey) {
+  if (record.recordDate === dateKey) {
     events.push({ recordId: record.id, kind: 'sleep-start', occurrenceTimeMs: record.startMs });
   }
   if (record.status === 'completed' && toLocalDateKey(record.endMs) === dateKey) {

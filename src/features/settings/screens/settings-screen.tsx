@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import * as Application from 'expo-application';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AppState, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 import type { FeedingReminderStatus } from '@/application/reminders/feeding-reminder-service';
@@ -88,10 +88,9 @@ export function SettingsScreen() {
   const [developmentVisible, setDevelopmentVisible] = useState(false);
   const [reminderInfoVisible, setReminderInfoVisible] = useState(false);
   const [themeBusy, setThemeBusy] = useState(false);
-  const [today, setToday] = useState(() => toLocalDateKey(nowMs));
+  const today = toLocalDateKey(nowMs);
 
   const refreshStatus = useCallback(() => {
-    setToday(toLocalDateKey(Date.now()));
     let active = true;
     void backupExportService?.latest().then((receipt) => { if (active) setLastBackupMs(receipt?.savedAtMs ?? null); }).catch(() => undefined);
     if (!feedingReminderService) return () => { active = false; };
@@ -113,7 +112,14 @@ export function SettingsScreen() {
     return () => { active = false; };
   }, [feedingReminderService, backupExportService]);
 
-  useFocusEffect(refreshStatus);
+  useFocusEffect(useCallback(() => {
+    let cancelRefresh = refreshStatus();
+    const subscription = AppState.addEventListener('change', (state) => {
+      cancelRefresh();
+      if (state === 'active') cancelRefresh = refreshStatus();
+    });
+    return () => { cancelRefresh(); subscription.remove(); };
+  }, [refreshStatus]));
 
   if (!babyProfile || !feedingReminderService || !themeService) return null;
 

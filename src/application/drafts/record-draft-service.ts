@@ -19,6 +19,18 @@ export function createRecordDraftService(store: WorkflowStateStore, now: () => n
     }
     return draft;
   }
+  async function discardWithGeneration(id: string) {
+    return change((state) => {
+      const before = state.generation;
+      const draft = Object.values(state.drafts).find((item) => item.id === id);
+      if (draft) delete state.drafts[draft.key];
+      // Clearing the last quarantined item also resolves an interrupted restore boundary.
+      if (state.restore && !Object.values(state.drafts).some(isPendingDraft)) {
+        state.generation = createId(); state.restore = null;
+      }
+      return { draft: draft ?? null, generation: state.generation, generationChanged: state.generation !== before };
+    });
+  }
   return {
     store,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -80,17 +92,8 @@ export function createRecordDraftService(store: WorkflowStateStore, now: () => n
         draft.timer = null; draft.revision++;
       });
     },
-    async discard(id: string) {
-      return change((state) => {
-        const draft = Object.values(state.drafts).find((item) => item.id === id);
-        if (draft) delete state.drafts[draft.key];
-        // Clearing the last quarantined item also resolves an interrupted restore boundary.
-        if (state.restore && !Object.values(state.drafts).some(isPendingDraft)) {
-          state.generation = createId(); state.restore = null;
-        }
-        return draft ?? null;
-      });
-    },
+    discardWithGeneration,
+    async discard(id: string) { return (await discardWithGeneration(id)).draft; },
     async recoverAsNew(id: string, babyId?: string) {
       return change((state) => {
         const draft = Object.values(state.drafts).find((item) => item.id === id);
@@ -123,7 +126,9 @@ export function createRecordDraftService(store: WorkflowStateStore, now: () => n
         const draft = editable(state, id);
         if (draft.kind !== 'feeding' || draft.recordId) throw new DraftStateError('仅新建喝奶支持计时');
         if (action.type === 'start') {
-          if (Object.values(state.drafts).some((other) => other.id !== id && other.timer && !other.timer.finished)) {
+          if (Object.values(state.drafts).some((other) => other.id !== id
+            && other.generation === state.generation && other.babyId === draft.babyId
+            && isPendingDraft(other) && other.timer && !other.timer.finished)) {
             throw new DraftStateError('已有亲喂计时，请先继续那条记录');
           }
           if (draft.timer && !draft.timer.finished) return draft;
