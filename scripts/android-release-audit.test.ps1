@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'android-release-audit.ps1'
-$testRoot = Join-Path $env:TEMP "baobao-release-audit-test-$([guid]::NewGuid().ToString('N'))"
+$tempDirectory = (Resolve-Path -LiteralPath $env:TEMP).ProviderPath
+$testRoot = Join-Path $tempDirectory "baobao-release-audit-test-$([guid]::NewGuid().ToString('N'))"
 
 function Assert-Equal([string]$label, [string]$actual, [string]$expected) {
   if ($actual -ne $expected) {
@@ -225,9 +226,8 @@ exit /b 0
   Write-Output 'android release artifact signature, manifest, permission, and package-content audit tests: passed'
 } finally {
   if (Test-Path -LiteralPath $testRoot) {
-    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).Path
-    $resolvedTempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
-    if (-not $resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).ProviderPath
+    if (-not [string]::Equals((Split-Path -Parent $resolvedTestRoot), $tempDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
         (Split-Path -Leaf $resolvedTestRoot) -notlike 'baobao-release-audit-test-*') {
       throw 'Refusing to remove a test directory outside the expected temporary root'
     }
