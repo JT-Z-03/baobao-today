@@ -110,3 +110,35 @@ test('R15: a rejected discard transaction retains the isolated draft and generat
   transaction.mockRestore();
   await expect(drafts.discardWithGeneration(draft.id)).resolves.toMatchObject({ generationChanged: true });
 });
+
+test('attachment cleanup remains a separate injectable step after committed discard', async () => {
+  const { store } = setup();
+  const attachments = { isManaged: () => true, persist: jest.fn(), remove: jest.fn(async () => undefined), cleanup: jest.fn() };
+  const drafts = createRecordDraftService(store, () => 1000, () => 'photo-draft', attachments);
+  const draft = await drafts.create({ babyId: 'baby', kind: 'poop' }, {
+    eventTimeMs: 1000, note: '', amount: null, color: null, texture: null, previewUri: 'file://photo',
+    photoChange: { kind: 'replace', source: { uri: 'file://photo', width: 20, height: 20 } },
+  });
+  const transaction = jest.spyOn(store, 'transaction').mockRejectedValueOnce(new Error('disk'));
+  await expect(drafts.discard(draft.id)).rejects.toThrow('disk');
+  expect(attachments.remove).not.toHaveBeenCalled();
+  transaction.mockRestore();
+  const discarded = await drafts.discard(draft.id);
+  expect(attachments.remove).not.toHaveBeenCalled();
+  attachments.remove.mockRejectedValueOnce(new Error('storage unavailable'));
+  await expect(drafts.cleanupDiscardedAttachment(discarded)).rejects.toThrow('storage unavailable');
+  expect((await drafts.list()).drafts).toEqual([]);
+  await drafts.cleanupDiscardedAttachment(discarded);
+  expect(attachments.remove).toHaveBeenCalledWith('file://photo');
+  expect((await drafts.list()).drafts).toEqual([]);
+});
+
+test('isolated drafts protect unknown photo references during form cleanup as well as startup cleanup', async () => {
+  const { store } = setup();
+  const attachments = { isManaged: () => true, persist: jest.fn(), remove: jest.fn(), cleanup: jest.fn() };
+  const drafts = createRecordDraftService(store, () => 1000, () => 'new', attachments);
+  await store.transaction((state) => { state.quarantinedDrafts = [{ key: 'broken', raw: '{"photo":"unknown"}', reason: 'broken' }]; });
+  await drafts.attachments.remove('file://possibly-shared');
+  await drafts.attachments.cleanup(new Set(), 1000);
+  expect(attachments.remove).not.toHaveBeenCalled(); expect(attachments.cleanup).not.toHaveBeenCalled();
+});

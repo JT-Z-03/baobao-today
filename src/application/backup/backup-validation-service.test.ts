@@ -76,6 +76,15 @@ function setupArchive(formatVersion: 1 | 2) {
 }
 
 describe('BackupValidationService', () => {
+  test('reports verified photos by count and forwards progress during archive inspection/extraction', async () => {
+    const { service, archiveGateway } = setup();
+    const progress = jest.fn();
+    await service.prepare('picked.zip', 'restore-1', progress);
+    expect(archiveGateway.inspect).toHaveBeenCalledWith('private/source.zip', progress);
+    expect(archiveGateway.extract).toHaveBeenCalledWith('private/source.zip', expect.any(Map), progress);
+    expect(progress).toHaveBeenLastCalledWith({ stage: 'validate-photos', completed: 1, total: 1, unit: 'files' });
+  });
+
   test('validates archive structure, hashes, business data, photos, and returns a restore preview', async () => {
     const { service, photoGateway } = setup();
     const prepared = await service.prepare('picked.zip', 'restore-1');

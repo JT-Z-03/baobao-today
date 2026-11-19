@@ -1,10 +1,11 @@
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { LocalPhotoSource } from '@/domain/poop/poop';
+import type { DraftAttachmentStore } from '@/application/ports/draft-attachment';
 
 const directory = new Directory(Paths.document, 'draft-attachments');
 
-export class ExpoDraftAttachmentStore {
+export class ExpoDraftAttachmentStore implements DraftAttachmentStore {
   isManaged(uri: string) { return uri.startsWith(`${directory.uri.replace(/\/$/, '')}/`); }
   async persist(source: LocalPhotoSource): Promise<LocalPhotoSource> {
     if (this.isManaged(source.uri)) {

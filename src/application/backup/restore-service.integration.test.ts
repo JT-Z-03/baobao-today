@@ -79,6 +79,15 @@ test.each(['selected', 'rechecked', 'both'] as const)(
       expect(value.refreshAppState).toHaveBeenCalledTimes(1);
       expect(value.promoteSafetyArchive).toHaveBeenCalledWith('safety/pending.zip');
       expect(value.coordinator.busy).toBe(false);
+      await expect(value.service.confirmPrepared()).rejects.toThrow('请先处理或确认上次恢复结果');
+      expect(value.service.getResult()).toEqual({ warnings: ['restore-workspace-cleanup'], busy: false });
+      await value.service.retryPostRestore();
+      expect(value.service.getResult()).toEqual({ warnings: [], busy: false });
+      expect(value.selected.dispose).toHaveBeenCalledTimes(failure === 'rechecked' ? 1 : 2);
+      expect(value.rechecked.dispose).toHaveBeenCalledTimes(failure === 'selected' ? 1 : 2);
+      expect(value.refreshAppState).toHaveBeenCalledTimes(1);
+      expect(value.sqlite.prepare('SELECT id FROM baby').get()).toEqual({ id: 'restored-baby' });
+      value.service.acknowledgeResult();
       await expect(value.service.confirmPrepared()).rejects.toThrow('请先选择并校验完整备份');
       expect(value.backupService.createSafetyArchive).toHaveBeenCalledTimes(1);
     } finally { value.sqlite.close(); }

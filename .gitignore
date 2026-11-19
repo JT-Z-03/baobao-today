@@ -106,3 +106,4 @@ smoke-*.png
 # local agent workspaces
 /.worktrees/
 /.superpowers/
+/.runtime/

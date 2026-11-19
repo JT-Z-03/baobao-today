@@ -119,7 +119,9 @@ try {
   console.log('Other title semantic triggers: passed');
   console.log('Bottled breast milk feeding constraints: passed');
   console.log('Existing sleeping record reinitialization: passed');
-  console.log(`Final user_version: ${database.prepare('PRAGMA user_version').get().user_version}`);
+  const finalVersion = database.prepare('PRAGMA user_version').get().user_version;
+  if (finalVersion !== 9) throw new Error(`Business schema version mismatch: expected 9, received ${finalVersion}`);
+  console.log(`Final user_version: ${finalVersion}`);
 } finally {
   database.close();
 }

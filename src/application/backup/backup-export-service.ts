@@ -1,5 +1,5 @@
 import type { BackupService } from './backup-service';
-import type { BackupOperationCoordinator, BackupShareGateway } from '@/application/ports/backup';
+import { emitBackupProgress, type BackupOperationCoordinator, type BackupProgressObserver, type BackupShareGateway } from '@/application/ports/backup';
 import type { BackupExportGateway, BackupExportReceipt, BackupFileFingerprint } from '@/application/ports/backup-export';
 import type { WorkflowStateStore } from '@/application/ports/workflow-state';
 
@@ -12,8 +12,11 @@ export function createBackupExportService(deps: Dependencies) {
   let saving: Promise<SaveResult> | null = null;
   const matches = (a: BackupFileFingerprint, b: BackupFileFingerprint) => a.byteLength === b.byteLength && a.sha256 === b.sha256;
   const update = async (receipt: BackupExportReceipt) => deps.store.transaction((state) => {
-    const index = state.exports.findIndex((item) => item.id === receipt.id);
-    if (index < 0) state.exports.push(receipt); else state.exports[index] = receipt;
+    // Older versions stored finished receipts in reverse order. Append the update
+    // after ordering history so a newly finished write survives the retention limit.
+    state.exports = state.exports.filter((item) => item.id !== receipt.id)
+      .sort((a, b) => (a.savedAtMs ?? a.createdAtMs) - (b.savedAtMs ?? b.createdAtMs));
+    state.exports.push(receipt);
     // Keep unfinished writes for reconciliation, and the 20 most recent finished receipts.
     const completed = state.exports.filter((item) => item.status !== 'writing').slice(-20);
     state.exports = [...state.exports.filter((item) => item.status === 'writing'), ...completed];
@@ -49,11 +52,12 @@ export function createBackupExportService(deps: Dependencies) {
   }
 
   return {
-    async create(): Promise<GeneratedBackup> {
+    async create(observer?: BackupProgressObserver): Promise<GeneratedBackup> {
       return deps.coordinator.runExclusive(async () => {
         const state = await deps.store.read();
         if (state.restore) throw new Error('请先核对恢复后的未完成记录，再备份');
-        const archive = await deps.backup.createExportArchive();
+        const archive = await deps.backup.createExportArchive(...(observer ? [observer] as const : []));
+        emitBackupProgress(observer, { stage: 'verify-export' });
         const fingerprint = await deps.gateway.fingerprint(archive.uri);
         return { ...fingerprint, id: deps.createId(), sourceUri: archive.uri, filename: archive.filename,
           generation: state.generation, createdAtMs: deps.now() };
@@ -75,14 +79,28 @@ export function createBackupExportService(deps: Dependencies) {
     async check(receipt: BackupExportReceipt) {
       try { return matches(receipt, await deps.gateway.fingerprint(receipt.uri)); } catch { return false; }
     },
-    async reconcilePending() {
+    async reconcilePending(options: { receiptIds?: ReadonlySet<string>; isActive?: () => boolean } = {}) {
+      const isActive = options.isActive ?? (() => true);
       const state = await deps.store.read();
-      for (const receipt of state.exports.filter((item) => item.status === 'writing')) {
+      for (const receipt of state.exports.filter((item) => item.status === 'writing'
+        && (!options.receiptIds || options.receiptIds.has(item.id)))) {
+        if (!isActive()) return;
+        let reconciled: BackupExportReceipt;
         try {
           const fingerprint = await deps.gateway.fingerprint(receipt.uri);
-          await update({ ...receipt, status: matches(receipt, fingerprint) ? 'verified' : 'failed',
-            savedAtMs: matches(receipt, fingerprint) ? deps.now() : null });
-        } catch { await update({ ...receipt, status: 'unverified' }); }
+          reconciled = { ...receipt, status: matches(receipt, fingerprint) ? 'verified' : 'failed',
+            savedAtMs: matches(receipt, fingerprint) ? deps.now() : null };
+        } catch { reconciled = { ...receipt, status: 'unverified' }; }
+        if (!isActive()) return;
+        await deps.store.transaction((latest) => {
+          if (!isActive()) return;
+          const index = latest.exports.findIndex((item) => item.id === receipt.id);
+          // A foreground save, restore or another initialization may have changed
+          // this receipt while its external provider was being read.
+          if (index >= 0 && JSON.stringify(latest.exports[index]) === JSON.stringify(receipt)) {
+            latest.exports[index] = reconciled;
+          }
+        });
       }
     },
   };

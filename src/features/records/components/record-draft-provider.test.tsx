@@ -20,6 +20,7 @@ const mockWorkflowStore: WorkflowStateStore = {
 };
 const mockGetWorkflowStore = jest.fn(async () => mockWorkflowStore);
 const mockDraftPhotoRemove = jest.fn(async (_uri: string): Promise<void> => undefined);
+const mockDraftPhotoCleanup = jest.fn(async () => undefined);
 let mockCurrent: ReturnType<typeof useAppState>;
 let mockProfile = { id: 'baby', name: '虚构宝宝', birthDate: '2026-01-01', createdAtMs: 1, updatedAtMs: 1 };
 let mockSaved: OtherRecord | null = null;
@@ -37,7 +38,10 @@ const mockBack = jest.fn();
 let mockPrepare = jest.fn();
 const mockSafety = jest.fn(async () => ({ uri: 'memory://safety.zip', filename: 'backup.zip' }));
 const mockReplace = jest.fn(async (data) => { mockProfile = { ...mockProfile, id: data.baby.id, name: data.baby.name }; });
-const mockCleanupStaging = jest.fn(async () => undefined);
+const mockCleanupStaging = jest.fn(async (): Promise<void> => undefined);
+const mockOrphanCleanup = jest.fn(async (_isActive?: () => boolean) => ({ deleted: 0, failed: 0 }));
+const mockReconcilePending = jest.fn(async (_options?: { receiptIds: ReadonlySet<string>; isActive: () => boolean }): Promise<void> => undefined);
+const mockReminderSync = jest.fn(async () => undefined);
 let mockUnmounts = 0;
 let mockGeneratedId = 0;
 let mockRealRouter = false;
@@ -52,6 +56,7 @@ jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
     useRouter: () => mockRealRouter ? jest.requireActual('expo-router').useRouter() : ({ back: mockBack, replace: jest.fn(), push: jest.fn(), navigate: jest.fn() }),
+    useIsFocused: () => mockRealRouter ? jest.requireActual('expo-router').useIsFocused() : true,
     useFocusEffect: (callback: () => void | (() => void)) => {
       const useFocus = mockRealRouter ? jest.requireActual('expo-router').useFocusEffect : React.useEffect;
       return useFocus(...(mockRealRouter ? [callback] : [callback, [callback]]));
@@ -75,7 +80,7 @@ jest.mock('@/features/records/components/record-save-feedback', () => ({ showRec
 jest.mock('@/data/database/database', () => ({ getDatabase: async () => ({}) }));
 jest.mock('@/data/workflow/workflow-database', () => ({ getWorkflowStore: () => mockGetWorkflowStore() }));
 jest.mock('@/data/workflow/expo-draft-attachment-store', () => ({ ExpoDraftAttachmentStore: class {
-  cleanup = async () => undefined; remove = mockDraftPhotoRemove;
+  cleanup = mockDraftPhotoCleanup; remove = mockDraftPhotoRemove;
 } }));
 jest.mock('@/data/repositories/sqlite-baby-repository', () => ({ createSQLiteBabyRepository: () => ({ get: async () => mockProfile }) }));
 jest.mock('@/data/repositories/sqlite-other-repository', () => ({ createSQLiteOtherRepository: () => mockOtherRepository }));
@@ -91,7 +96,7 @@ jest.mock('@/data/repositories/sqlite-restore-repository', () => ({ createSQLite
   hasCurrentData: async () => true, listReferencedPhotoPaths: async () => [], replaceAll: mockReplace,
 }) }));
 jest.mock('@/data/photo/expo-photo-store', () => ({ ExpoPhotoStore: class {} }));
-jest.mock('@/application/poop/poop-service', () => ({ createPoopService: () => ({ cleanupOrphanPhotos: async () => ({ deleted: 0, failed: 0 }), getHistory: async () => [], getDailyCount: async () => 0 }) }));
+jest.mock('@/application/poop/poop-service', () => ({ createPoopService: () => ({ cleanupOrphanPhotos: mockOrphanCleanup, getHistory: async () => [], getDailyCount: async () => 0 }) }));
 jest.mock('@/application/feeding/feeding-service', () => ({ createFeedingService: () => ({ getDashboard: mockFeedingDashboard }) }));
 jest.mock('@/application/pee/pee-service', () => ({ createPeeService: () => ({ getHistory: async () => [], getDailyCount: async () => 0 }) }));
 jest.mock('@/application/sleep/sleep-service', () => ({ createSleepService: () => ({ getDashboard: async () => ({ active: null, timeline: [], completedTotalMs: 0, refreshedAtMs: 1 }) }) }));
@@ -99,10 +104,7 @@ jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
 jest.mock('@/components/ui/app-illustration', () => ({ AppIllustration: () => null }));
 jest.mock('@/components/ui/brand-mark', () => ({ BrandMark: () => null }));
 jest.mock('@/data/notifications/expo-notification-gateway', () => ({ ExpoNotificationGateway: class {}, installForegroundNotificationHandler: jest.fn() }));
-jest.mock('@/application/reminders/feeding-reminder-service', () => ({ createFeedingReminderService: () => ({ syncFeedingReminder: async () => undefined }) }));
-jest.mock('@/application/reminders/feeding-reminder-lifecycle', () => ({
-  reconcileFeedingReminderOnStartup: async () => undefined, subscribeToFeedingReminderForeground: () => ({ remove: jest.fn() }),
-}));
+jest.mock('@/application/reminders/feeding-reminder-service', () => ({ createFeedingReminderService: () => ({ syncFeedingReminder: mockReminderSync }) }));
 jest.mock('@/data/export/expo-export-file-store', () => ({ ExpoExportFileStore: class { cleanupExpired = async () => ({ deleted: 0, failed: 0 }); } }));
 jest.mock('@/data/export/expo-share-gateway', () => ({ ExpoShareGateway: class {} }));
 jest.mock('@/data/backup/expo-backup-file-store', () => ({ ExpoBackupFileStore: class {
@@ -120,7 +122,7 @@ jest.mock('@/data/backup/expo-backup-hash-gateway', () => ({ ExpoBackupHashGatew
 jest.mock('@/data/backup/expo-backup-export-gateway', () => ({ ExpoBackupExportGateway: class {} }));
 jest.mock('@/application/backup/backup-service', () => ({ createBackupService: () => ({ createSafetyArchive: mockSafety }) }));
 jest.mock('@/application/backup/backup-validation-service', () => ({ createBackupValidationService: () => ({ prepare: (...args: unknown[]) => mockPrepare(...args) }) }));
-jest.mock('@/application/backup/backup-export-service', () => ({ createBackupExportService: () => ({ reconcilePending: async () => undefined }) }));
+jest.mock('@/application/backup/backup-export-service', () => ({ createBackupExportService: () => ({ reconcilePending: mockReconcilePending }) }));
 
 // Load the Router's native module graph before individual tests' unchanged timeout begins.
 const mockActualRouter = jest.requireActual<typeof import('expo-router')>('expo-router');
@@ -151,11 +153,117 @@ function Probe({ form = false }: { form?: boolean }) {
 }
 beforeEach(() => {
   jest.restoreAllMocks(); jest.clearAllMocks(); mockWorkflow = emptyWorkflowState('dataset'); mockSaved = null; mockUnmounts = 0; mockGeneratedId = 0;
+  jest.spyOn(console, 'info').mockImplementation(() => undefined);
   mockGetWorkflowStore.mockReset().mockResolvedValue(mockWorkflowStore);
   mockDraftPhotoRemove.mockReset().mockResolvedValue(undefined);
+  mockDraftPhotoCleanup.mockReset().mockResolvedValue(undefined);
+  mockOrphanCleanup.mockReset().mockResolvedValue({ deleted: 0, failed: 0 });
+  mockReconcilePending.mockReset().mockResolvedValue(undefined);
+  mockCleanupStaging.mockReset().mockResolvedValue(undefined);
+  mockReminderSync.mockReset().mockResolvedValue(undefined);
   mockFeedingDashboard.mockReset().mockResolvedValue({ latest: null, timeline: [], summary: { feedingCount: 0, formulaTotalMl: 0, breastMilkTotalMl: 0, measurableTotalMl: 0 }, refreshedAtMs: 1 });
   mockRealRouter = false; mockPendingMounts = 0; mockPendingUnmounts = 0;
   mockProfile = { id: 'baby', name: '虚构宝宝', birthDate: '2026-01-01', createdAtMs: 1, updatedAtMs: 1 };
+});
+
+test('P2 startup waits for restore isolation, but ready and saving do not await slow external receipt verification', async () => {
+  mockWorkflow.exports = [{ id: 'interrupted', generation: 'dataset', uri: 'content://old', sourceUri: 'file://old',
+    filename: 'old.zip', location: '', status: 'writing', byteLength: 1, sha256: 'a'.repeat(64), createdAtMs: 1, savedAtMs: null }];
+  let finishCritical!: () => void; let finishExternal!: () => void;
+  mockCleanupStaging.mockImplementationOnce(() => new Promise<void>((resolve) => { finishCritical = resolve; }));
+  mockReconcilePending.mockImplementationOnce(() => new Promise<void>((resolve) => { finishExternal = resolve; }));
+  const screen = await render(<AppStateProvider><Probe /></AppStateProvider>);
+  await waitFor(() => expect(mockCleanupStaging).toHaveBeenCalled());
+  expect(mockCurrent.status).toBe('loading'); expect(mockOrphanCleanup).not.toHaveBeenCalled();
+  await act(async () => { finishCritical(); });
+  await screen.findByText('ready');
+  await waitFor(() => expect(mockReconcilePending).toHaveBeenCalledTimes(1));
+  await expect(mockCurrent.otherService!.create(currentInput, 'during-maintenance')).resolves.toMatchObject(currentInput);
+  await screen.unmount();
+  expect(mockReconcilePending.mock.calls[0][0]!.isActive()).toBe(false);
+  await act(async () => { finishExternal(); });
+});
+
+test('P2 startup retry cancels old maintenance; foreground sync does not repeat cleanup', async () => {
+  let finishOld!: () => void;
+  mockOrphanCleanup.mockImplementationOnce(() => new Promise((resolve) => { finishOld = () => resolve({ deleted: 0, failed: 0 }); }));
+  const listener = jest.spyOn(AppState, 'addEventListener');
+  const screen = await render(<AppStateProvider><Probe /></AppStateProvider>);
+  await screen.findByText('ready'); await waitFor(() => expect(mockOrphanCleanup).toHaveBeenCalledTimes(1));
+  const oldToken = mockOrphanCleanup.mock.calls[0][0]!;
+  await act(async () => { mockCurrent.retryInitialization(); });
+  await waitFor(() => expect(mockOrphanCleanup).toHaveBeenCalledTimes(2));
+  expect(oldToken()).toBe(false);
+  const foreground = listener.mock.calls.at(-1)![1];
+  await act(async () => { foreground('active'); finishOld(); });
+  expect(mockReminderSync).toHaveBeenCalledTimes(3);
+  expect(mockOrphanCleanup).toHaveBeenCalledTimes(2);
+  expect(mockCurrent.status).toBe('ready'); await screen.unmount();
+});
+
+test('P2 maintenance failures remain visible and can retry without rebuilding application services', async () => {
+  mockOrphanCleanup.mockRejectedValueOnce(new Error('temporary file failure'));
+  const screen = await render(<AppStateProvider><Probe /></AppStateProvider>);
+  await waitFor(() => expect(mockCurrent.maintenanceError).toContain('照片清理暂未完成'));
+  const before = mockCurrent.otherService;
+  await act(async () => { mockCurrent.retryMaintenance(); });
+  await waitFor(() => expect(mockOrphanCleanup).toHaveBeenCalledTimes(2));
+  expect(mockCurrent.maintenanceError).toBeNull(); expect(mockCurrent.otherService).toBe(before);
+  await screen.unmount();
+});
+
+test('P2 restore warning survives real Provider service refresh and retries only post-commit cleanup', async () => {
+  const dispose = jest.fn(async () => undefined).mockRejectedValueOnce(new Error('temporary workspace failure'));
+  mockPrepare = jest.fn(async () => ({
+    workspace: { archiveUri: 'memory://validated.zip' }, manifest: { entries: [] }, photoUris: new Map(),
+    data: { baby: { ...mockProfile, id: 'restored-baby' }, records: [], settings: {} }, dispose,
+  }));
+  const screen = await render(<AppStateProvider><Probe /><TodayScreen /></AppStateProvider>);
+  await waitFor(() => expect(mockCurrent.status).toBe('ready'));
+  const original = mockCurrent.restoreService!;
+  await original.pickAndPrepare();
+  let restore!: ReturnType<typeof original.confirmPrepared>;
+  await act(async () => { restore = original.confirmPrepared(); });
+  await waitFor(() => expect(mockCurrent.restoreService).not.toBe(original));
+  await act(async () => { await restore; });
+  expect(mockCurrent.restoreService!.getResult()?.warnings).toContain('restore-workspace-cleanup');
+  await screen.findByText('恢复临时文件尚未清理完成。');
+  await act(async () => { await mockCurrent.restoreService!.retryPostRestore(); });
+  expect(mockReplace).toHaveBeenCalledTimes(1);
+  expect(mockCurrent.restoreService!.getResult()?.warnings).toEqual([]);
+  await screen.unmount();
+});
+
+test('P2 isolated raw drafts retain all attachments and allow other healthy scopes to save', async () => {
+  mockWorkflow.quarantinedDrafts = [{ key: 'baby:poop:new', raw: '{"values":{"photoChange":{"source":{"uri":"file://unknown"}}}}', reason: '结构异常' }];
+  const screen = await render(<AppStateProvider><Probe /></AppStateProvider>);
+  await screen.findByText('ready');
+  expect(mockCurrent.draftWarning).toContain('1 条异常草稿已隔离');
+  expect(mockCurrent.draftError).toBeNull(); expect(mockDraftPhotoCleanup).not.toHaveBeenCalled();
+  await mockCurrent.draftService!.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 1, title: 'healthy', note: '' });
+  expect(mockWorkflow.quarantinedDrafts).toHaveLength(1);
+  expect(Object.values(mockWorkflow.drafts)[0].kind).toBe('other');
+  await screen.unmount();
+});
+
+test('P2 failed real initialization after restore produces a retryable app-refresh warning without repeating data replacement', async () => {
+  mockPrepare = jest.fn(async () => ({ workspace: { archiveUri: 'memory://validated.zip' }, manifest: { entries: [] }, photoUris: new Map(),
+    data: { baby: { ...mockProfile, id: 'restored-baby' }, records: [], settings: {} }, dispose: async () => undefined }));
+  const screen = await render(<AppStateProvider><Probe /></AppStateProvider>);
+  await screen.findByText('ready'); const original = mockCurrent.restoreService!;
+  mockCleanupStaging.mockRejectedValueOnce(new Error('startup staging failure'));
+  await original.pickAndPrepare();
+  let restore!: ReturnType<typeof original.confirmPrepared>;
+  await act(async () => { restore = original.confirmPrepared(); });
+  await screen.findByText('error');
+  await act(async () => { await restore; });
+  expect(original.getResult()?.warnings).toContain('app-refresh');
+  let retry!: Promise<void>;
+  await act(async () => { retry = original.retryPostRestore(); });
+  await screen.findByText('ready');
+  await act(async () => { await retry; });
+  expect(mockCurrent.restoreService!.getResult()?.warnings).toEqual([]);
+  expect(mockReplace).toHaveBeenCalledTimes(1); await screen.unmount();
 });
 
 test('R15: actual Provider regenerates services after last quarantined draft is discarded; stale guard stays closed', async () => {
@@ -614,7 +722,8 @@ test('R19: a successful recovered retry clears the session for other records and
   await screen.findByText(committedDiscardMessage);
   await fireEvent.press(screen.getByText('放弃这条旧草稿'));
   await waitFor(() => expect(mockCurrent.otherService).not.toBe(oldOther));
-  const other = await mockCurrent.draftService!.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 60, title: '独立新草稿', note: '新的完整内容' });
+  let other!: Awaited<ReturnType<ReturnType<typeof createRecordDraftService>['create']>>;
+  await act(async () => { other = await mockCurrent.draftService!.create({ babyId: 'baby', kind: 'other' }, { eventTimeMs: 60, title: '独立新草稿', note: '新的完整内容' }); });
   const independent = structuredClone(mockWorkflow.drafts[other.key]);
   await screen.rerender(<AppStateProvider><Probe /></AppStateProvider>);
   await screen.rerender(<AppStateProvider><Probe /><PendingPhotoFlow /></AppStateProvider>);

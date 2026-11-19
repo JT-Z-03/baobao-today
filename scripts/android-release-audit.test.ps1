@@ -9,13 +9,17 @@ function Assert-Equal([string]$label, [string]$actual, [string]$expected) {
   }
 }
 
-function New-TestArchive([string]$Path, [string]$DexContent) {
+function New-TestArchive([string]$Path, [string]$DexContent, [string[]]$SqliteAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')) {
   $payloadRoot = Join-Path $testRoot ([guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
   Set-Content -LiteralPath (Join-Path $payloadRoot 'classes.dex') -Value $DexContent -Encoding ASCII
   $zipPath = "$Path.zip"
   Compress-Archive -Path (Join-Path $payloadRoot '*') -DestinationPath $zipPath
   Move-Item -LiteralPath $zipPath -Destination $Path
+  $libRoot = if ([IO.Path]::GetExtension($Path) -eq '.aab') { 'base/lib' } else { 'lib' }
+  foreach ($abi in $SqliteAbis) {
+    Set-ArchiveEntry $Path "$libRoot/$abi/libexpo-sqlite.so" 'sqlite-library-fixture'
+  }
 }
 
 function Write-FakeManifestTool([string]$Path, [switch]$WithProhibitedPermission) {
@@ -136,6 +140,7 @@ exit /b 0
   Assert-Equal 'Certificate digest' $result.CertificateSha256 $certificateSha256
   Assert-Equal 'APK signature verified' ([string]$result.ApkSignatureVerified) 'True'
   Assert-Equal 'AAB signature verified' ([string]$result.AabSignatureVerified) 'True'
+  Assert-Equal 'SQLite ABI coverage for both artifacts' ($result.SqliteAbisVerifiedInBothArtifacts -join ',') 'arm64-v8a,armeabi-v7a,x86,x86_64'
   Write-Output 'Valid signature with self-signed certificate warning accepted'
   Assert-Equal 'Debuggable' ([string]$result.Debuggable) 'False'
   Assert-Equal 'Prohibited permission count' ([string]$result.ProhibitedPermissions.Count) '0'
@@ -143,6 +148,21 @@ exit /b 0
   Assert-Equal 'Development marker count' ([string]$result.DevelopmentMarkers.Count) '0'
   if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
     throw 'Release audit did not write its evidence JSON'
+  }
+
+  foreach ($extension in @('apk', 'aab')) {
+    $incomplete = Join-Path $testRoot "incomplete.$extension"
+    New-TestArchive $incomplete 'release-code' @('arm64-v8a')
+    $pair = @{ ApkPath = $apkPath; AabPath = $aabPath }
+    if ($extension -eq 'apk') { $pair.ApkPath = $incomplete } else { $pair.AabPath = $incomplete }
+    $rejectedOutput = Join-Path $testRoot "missing-abi-$extension.json"
+    $failure = $null
+    try {
+      & $scriptPath @pair -AndroidSdkRoot $sdkRoot -JavaHome $javaHome -OutputPath $rejectedOutput | Out-Null
+    } catch { $failure = $_.Exception.Message }
+    Assert-Equal "Missing $extension SQLite ABIs" $failure "incomplete.$extension missing libexpo-sqlite.so for ABI(s): armeabi-v7a, x86, x86_64"
+    if (Test-Path -LiteralPath $rejectedOutput) { throw "Audit recorded success for the incomplete $extension" }
+    Write-Output "Rejected $extension containing only the arm64 SQLite library"
   }
 
   $tamperedAab = Join-Path $testRoot 'tampered.aab'

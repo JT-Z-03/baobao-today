@@ -1,4 +1,5 @@
 import type { BackupSnapshot } from '@/application/ports/backup';
+import * as backupCapacity from '@/domain/backup/backup-capacity';
 
 import { createBackupService } from './backup-service';
 
@@ -71,6 +72,77 @@ function snapshotWithBottleBreast(amount: number): BackupSnapshot {
 }
 
 describe('BackupService', () => {
+  test.each([
+    ['createSafetyArchive', 32],
+    ['createExportArchive', 65],
+  ] as const)('%s processes a queued callback after %i serialized records', async (method, expectedCount) => {
+    const records = Array.from({ length: 65 }, (_, index) => ({
+      ...snapshot.records[0], id: `batch-${index}`, client_request_id: `request-${index}`, source_photo_path: null,
+    }));
+    const { service, workspace } = setup({ ...snapshot, records });
+    let serialized = 0;
+    let whenCallbackRan = 0;
+    const clock = jest.spyOn(performance, 'now').mockImplementation(() => serialized * 2);
+    const countBytes = backupCapacity.backupUtf8ByteLength;
+    const byteCounter = jest.spyOn(backupCapacity, 'backupUtf8ByteLength').mockImplementation((text) => {
+      if (text.includes('"id":"batch-')) {
+        serialized++;
+        if (serialized === 1) setTimeout(() => { whenCallbackRan = serialized; }, 0);
+      }
+      return countBytes(text);
+    });
+    try {
+      await service[method]();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(whenCallbackRan).toBe(expectedCount);
+      const entries = Object.fromEntries(workspace.writeJson.mock.calls);
+      expect(JSON.parse(entries['records.json']).map((row: { id: string }) => row.id)).toEqual(records.map((row) => row.id));
+    } finally {
+      byteCounter.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
+  test.each(['createExportArchive', 'createSafetyArchive'] as const)(
+    '%s reuses the byte count without scanning the complete records JSON again',
+    async (method) => {
+      const { service, workspace } = setup({
+        ...snapshot,
+        records: [{ ...snapshot.records[0], note: '宝宝🍼' }],
+      });
+      const countBytes = jest.spyOn(backupCapacity, 'backupUtf8ByteLength');
+      const preflight = jest.spyOn(backupCapacity, 'inspectBackupCreationCapacity');
+      try {
+        await service[method]();
+        const entries = Object.fromEntries(workspace.writeJson.mock.calls);
+        expect(countBytes).toHaveBeenCalledWith(entries['baby.json']);
+        expect(countBytes).not.toHaveBeenCalledWith(entries['records.json']);
+        expect(preflight).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({
+          path: 'records.json',
+          byteLength: new TextEncoder().encode(entries['records.json']).length,
+        })]));
+      } finally {
+        preflight.mockRestore();
+        countBytes.mockRestore();
+      }
+    },
+  );
+
+  test('reports creation stages and forwards its optional observer through archive verification', async () => {
+    const { service, archiveGateway, validationService } = setup();
+    const progress = jest.fn();
+    await service.createExportArchive(progress);
+    expect(progress.mock.calls.map(([value]) => value.stage)).toEqual(expect.arrayContaining(['snapshot', 'prepare-files']));
+    expect(archiveGateway.createArchive).toHaveBeenCalledWith('cache/backup.zip', expect.any(Array), progress);
+    expect(validationService.prepare).toHaveBeenCalledWith('cache/backup.zip', 'verify-backup-1', progress);
+  });
+
+  test('a failed UI observer cannot turn a valid backup into failure', async () => {
+    const { service, shareGateway } = setup();
+    await expect(service.createAndShare(() => { throw new Error('unmounted'); })).resolves.toBeDefined();
+    expect(shareGateway.share).toHaveBeenCalledTimes(1);
+  });
+
   test('creates manifest, JSON, photo entry, validates the resulting archive, and shares only temporary backups', async () => {
     const { service, workspace, archiveGateway, shareGateway, validationService } = setup();
     const result = await service.createAndShare();
@@ -88,10 +160,8 @@ describe('BackupService', () => {
   test('creates format version two with bottled breast milk in records.json', async () => {
     const { service, workspace } = setup(snapshotWithBottleBreast(80));
     await service.createAndShare();
-    expect(workspace.writeJson).toHaveBeenCalledWith(
-      'records.json',
-      expect.stringContaining('"breast_milk_amount_ml": 80'),
-    );
+    const recordsJson = workspace.writeJson.mock.calls.find(([path]) => path === 'records.json')![1];
+    expect(JSON.parse(recordsJson)).toEqual([expect.objectContaining({ breast_milk_amount_ml: 80 })]);
     expect(workspace.writeJson).toHaveBeenCalledWith(
       'manifest.json',
       expect.stringContaining('"formatVersion": 2'),

@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
-import { createContext, type PropsWithChildren, use, useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, type PropsWithChildren, use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState as NativeAppState } from 'react-native';
 
 import { saveBabyProfile } from '@/application/baby/save-baby-profile';
@@ -56,14 +56,18 @@ import { createRecordDraftService, type RecordDraftService } from '@/application
 import { createBackupExportService, type BackupExportService } from '@/application/backup/backup-export-service';
 import { ExpoBackupExportGateway } from '@/data/backup/expo-backup-export-gateway';
 import { ExpoDraftAttachmentStore } from '@/data/workflow/expo-draft-attachment-store';
+import { scheduleStartupMaintenance, type StartupMaintenanceTask } from './startup-maintenance';
 
 installForegroundNotificationHandler();
 
 type AppStatus = 'loading' | 'ready' | 'error';
 
 type AppStateValue = {
+  maintenanceError: string | null;
+  retryMaintenance(): void;
   draftService: RecordDraftService | null;
   draftError: string | null;
+  draftWarning: string | null;
   backupExportService: BackupExportService | null;
   status: AppStatus;
   errorMessage: string | null;
@@ -86,8 +90,12 @@ type AppStateValue = {
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({ children }: PropsWithChildren) {
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+  const [maintenanceTasks, setMaintenanceTasks] = useState<StartupMaintenanceTask[]>([]);
+  const [maintenanceAttempt, setMaintenanceAttempt] = useState(0);
   const [draftService, setDraftService] = useState<RecordDraftService | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftWarning, setDraftWarning] = useState<string | null>(null);
   const [backupExportService, setBackupExportService] = useState<BackupExportService | null>(null);
   const [status, setStatus] = useState<AppStatus>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -108,39 +116,74 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     reminderReason: FeedingReminderInitializationReason;
   }>({ attempt: 0, reminderReason: 'cold-start' });
   const operationCoordinator = useMemo(() => new BackupRestoreCoordinator(), []);
+  const startupReceiptIds = useRef<Set<string> | null>(null);
+  const initializationSequence = useRef(0);
+  const initializationStartedAt = useRef(0);
+  const initializationWaiters = useRef(new Map<number, { resolve(): void; reject(error: Error): void }>());
 
   const requestInitialization = useCallback((reminderReason: FeedingReminderInitializationReason) => {
+    const attempt = ++initializationSequence.current;
+    for (const waiter of initializationWaiters.current.values()) waiter.reject(new Error('初始化已被新的重试替代'));
+    initializationWaiters.current.clear();
+    const completed = new Promise<void>((resolve, reject) => { initializationWaiters.current.set(attempt, { resolve, reject }); });
     setStatus('loading');
     setErrorMessage(null);
-    setInitializationRequest((request) => ({
-      attempt: request.attempt + 1,
-      reminderReason,
-    }));
+    setMaintenanceTasks([]);
+    setMaintenanceError(null);
+    setInitializationRequest({ attempt, reminderReason });
+    return completed;
   }, []);
 
   const retryInitialization = useCallback(() => {
-    requestInitialization('retry');
+    void requestInitialization('retry').catch(() => undefined);
   }, [requestInitialization]);
+
+  const retryMaintenance = useCallback(() => {
+    setMaintenanceError(null);
+    setMaintenanceAttempt((attempt) => attempt + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const assertActive = () => { if (!active) throw new Error('Initialization superseded'); };
+    const startedAt = performance.now();
+    initializationStartedAt.current = startedAt;
+    const mark = (stage: string) => {
+      if (__DEV__ && active) console.info('[startup]', { stage, elapsedMs: Math.round(performance.now() - startedAt), attempt: initializationRequest.attempt });
+    };
 
     getDatabase()
       .then(async (database) => {
+        assertActive();
+        mark('database-ready');
+        const tasks: StartupMaintenanceTask[] = [];
         let initializedDraftService: RecordDraftService | null = null;
+        let pendingReceiptIds = new Set<string>();
         let generation = '';
         try {
           const workflowStore = await getWorkflowStore();
-          generation = (await workflowStore.read()).generation;
-          initializedDraftService = createRecordDraftService(workflowStore, Date.now, Crypto.randomUUID);
           const workflow = await workflowStore.read();
+          assertActive();
+          generation = workflow.generation;
+          startupReceiptIds.current ??= new Set(workflow.exports.filter((receipt) => receipt.status === 'writing').map((receipt) => receipt.id));
+          pendingReceiptIds = startupReceiptIds.current;
+          const attachments = new ExpoDraftAttachmentStore();
+          initializedDraftService = createRecordDraftService(workflowStore, Date.now, Crypto.randomUUID, attachments);
           const references = new Set(Object.values(workflow.drafts).flatMap((draft) =>
             draft.kind === 'poop' && draft.values.photoChange.kind === 'replace' ? [draft.values.photoChange.source.uri] : []));
-          await new ExpoDraftAttachmentStore().cleanup(references, Date.now() - 24 * 60 * 60_000).catch(() => undefined);
-          if (active) setDraftError(null);
+          const isolatedCount = workflow.quarantinedDrafts?.length ?? 0;
+          // Unknown attachment references in isolated raw entries must be retained.
+          if (!isolatedCount) await attachments.cleanup(references, Date.now() - 24 * 60 * 60_000).catch(() => undefined);
+          assertActive();
+          if (active) {
+            setDraftError(null);
+            setDraftWarning(isolatedCount ? `${isolatedCount} 条异常草稿已隔离，原内容和附件已保留；其他草稿可继续使用` : null);
+          }
         } catch {
-          if (active) setDraftError('本机草稿暂不可用，原资料已保留，请重试');
+          if (active) { setDraftError('本机草稿暂不可用，原资料已保留，请重试'); setDraftWarning(null); }
         }
+        assertActive();
+        mark('workflow-ready');
         if (active) setDraftService(initializedDraftService);
         const idDependencies = {
           now: Date.now,
@@ -157,23 +200,22 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           new ExpoPhotoStore(),
           { ...idDependencies, createPhotoId: Crypto.randomUUID },
         );
-        try {
-          const cleanupResult = await initializedPoopService.cleanupOrphanPhotos();
-          if (__DEV__ && (cleanupResult.deleted || cleanupResult.failed)) {
-            console.info('[photos] orphan cleanup', cleanupResult);
-          }
-        } catch (error) {
-          console.warn('[photos] orphan cleanup failed', error);
-        }
+        if (initializedDraftService) tasks.push({ name: '照片清理', run: async (isActive) => {
+          const cleanupResult = await initializedPoopService.cleanupOrphanPhotos(isActive);
+          if (cleanupResult.failed) throw new Error('部分过期照片暂未清理');
+          mark('photo-maintenance-finished');
+        } });
         const exportFileStore = new ExpoExportFileStore();
         try {
           const cleanupResult = await exportFileStore.cleanupExpired(Date.now());
+          assertActive();
           if (__DEV__ && (cleanupResult.deleted || cleanupResult.failed)) {
             console.info('[exports] expired file cleanup', cleanupResult);
           }
         } catch (error) {
           console.warn('[exports] expired file cleanup failed', error);
         }
+        assertActive();
         const feedingRepository = createSQLiteFeedingRepository(database);
         const initializedFeedingReminderService = createFeedingReminderService({
           settingsRepository: createSQLiteFeedingReminderSettingsRepository(database),
@@ -190,13 +232,17 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         } catch (error) {
           console.warn('[reminders] startup reconciliation failed', error);
         }
+        assertActive();
         const backupFileStore = new ExpoBackupFileStore();
         await backupFileStore.cleanupStaging();
+        assertActive();
+        mark('restore-staging-ready');
         try {
           await backupFileStore.cleanupExpiredTemporary(Date.now());
         } catch (error) {
           console.warn('[backups] expired file cleanup failed', error);
         }
+        assertActive();
         const backupArchiveGateway = new FflateBackupArchiveGateway(new ExpoArchiveBinaryIo());
         const backupPhotoGateway = new ExpoBackupPhotoGateway();
         const backupValidationService = createBackupValidationService({
@@ -223,7 +269,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           const exports = createBackupExportService({ backup: initializedBackupService,
             gateway: new ExpoBackupExportGateway(), store: initializedDraftService.store,
             share: new ExpoBackupShareGateway(), coordinator: operationCoordinator, now: Date.now, createId: Crypto.randomUUID });
-          if (initializationRequest.reminderReason === 'cold-start') await exports.reconcilePending().catch(() => undefined);
+          if (pendingReceiptIds.size) tasks.push({ name: '备份保存核验', run: async (isActive) => {
+            await exports.reconcilePending({ receiptIds: pendingReceiptIds, isActive });
+            mark('receipt-maintenance-finished');
+          } });
           if (active) setBackupExportService(exports);
         } else if (active) setBackupExportService(null);
         const initializedRestoreService = createRestoreService({
@@ -235,7 +284,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           documentPicker: new ExpoBackupDocumentPickerGateway(),
           coordinator: operationCoordinator,
           reminderSync: () => initializedFeedingReminderService.syncFeedingReminder({ forceReschedule: true }),
-          refreshAppState: async () => requestInitialization('restore-refresh'),
+          refreshAppState: () => requestInitialization('restore-refresh'),
           now: Date.now,
           createId: Crypto.randomUUID,
           workflow: {
@@ -277,6 +326,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           restoreService: initializedRestoreService,
           themeMode: loadedThemeMode,
           themeService: initializedThemeService,
+          maintenanceTasks: tasks,
         };
       })
       .then(({
@@ -292,15 +342,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         restoreService: initializedRestoreService,
         themeMode: loadedThemeMode,
         themeService: initializedThemeService,
+        maintenanceTasks: initializedMaintenanceTasks,
       }) => {
         if (!active) return;
-        if (__DEV__) {
-          console.info('[database] baby profile loaded from SQLite', {
-            exists: profile !== null,
-            id: profile?.id ?? null,
-            birthDate: profile?.birthDate ?? null,
-          });
-        }
+        mark('critical-state-ready');
         setBabyProfile(profile);
         setFeedingService(initializedFeedingService);
         setFeedingReminderService(initializedFeedingReminderService);
@@ -313,18 +358,45 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         setRestoreService(initializedRestoreService);
         setThemeMode(loadedThemeMode);
         setThemeService(initializedThemeService);
+        setMaintenanceTasks(initializedMaintenanceTasks);
         setStatus('ready');
       })
       .catch((error) => {
         if (!active) return;
         setErrorMessage(String(error));
         setStatus('error');
+        initializationWaiters.current.get(initializationRequest.attempt)?.reject(new Error('当前资料重新载入失败，请重试'));
+        initializationWaiters.current.delete(initializationRequest.attempt);
       });
 
     return () => {
       active = false;
     };
   }, [initializationRequest.attempt, initializationRequest.reminderReason, operationCoordinator, requestInitialization]);
+
+  useEffect(() => {
+    if (status === 'ready') {
+      if (__DEV__) console.info('[startup]', { stage: 'ready-committed',
+        elapsedMs: Math.round(performance.now() - initializationStartedAt.current), attempt: initializationRequest.attempt });
+      initializationWaiters.current.get(initializationRequest.attempt)?.resolve();
+      initializationWaiters.current.delete(initializationRequest.attempt);
+    }
+  }, [status, initializationRequest.attempt]);
+
+  useEffect(() => {
+    const waiters = initializationWaiters.current;
+    return () => {
+      for (const waiter of waiters.values()) waiter.reject(new Error('资料重新载入已中断，请重试'));
+      waiters.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'ready') return;
+    return scheduleStartupMaintenance(maintenanceTasks, (name) => {
+      setMaintenanceError(`${name}暂未完成，记录可继续使用，请稍后重试`);
+    });
+  }, [status, maintenanceTasks, maintenanceAttempt]);
 
   useEffect(() => {
     if (!feedingReminderService) return undefined;
@@ -351,8 +423,11 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<AppStateValue>(
     () => ({
+      maintenanceError,
+      retryMaintenance,
       draftService,
       draftError,
+      draftWarning,
       backupExportService,
       status,
       errorMessage,
@@ -371,7 +446,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       saveInitialBabyProfile,
       retryInitialization,
     }),
-    [draftService, draftError, backupExportService, backupService, babyProfile, errorMessage, exportCsvService, feedingReminderService, feedingService, otherService, peeService, poopService, restoreService, retryInitialization, saveInitialBabyProfile, sleepService, status, themeMode, themeService],
+    [maintenanceError, retryMaintenance, draftService, draftError, draftWarning, backupExportService, backupService, babyProfile, errorMessage, exportCsvService, feedingReminderService, feedingService, otherService, peeService, poopService, restoreService, retryInitialization, saveInitialBabyProfile, sleepService, status, themeMode, themeService],
   );
 
   return <AppStateContext value={value}>{children}</AppStateContext>;

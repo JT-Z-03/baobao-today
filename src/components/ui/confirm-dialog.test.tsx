@@ -18,6 +18,7 @@ test('danger confirmation keeps cancel as the safe default and supports long cop
   );
 
   expect(view.getByText(/不会与现有数据合并/)).toBeTruthy();
+  expect(view.getByTestId('confirm-dialog-scroll').props.scrollEnabled).not.toBe(false);
   await fireEvent.press(view.getByRole('button', { name: '取消' }));
   expect(onCancel).toHaveBeenCalledTimes(1);
   await fireEvent.press(view.getByRole('button', { name: '确认恢复' }));

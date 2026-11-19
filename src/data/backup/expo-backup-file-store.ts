@@ -1,5 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
+import { moveAsync } from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 
 import type {
   BackupBuildWorkspace,
@@ -136,6 +138,12 @@ export class ExpoBackupFileStore implements BackupFileStore {
     const pending = new File(pendingUri);
     if (!pending.exists || pending.parentDirectory.uri !== safetyDirectory.uri) throw new Error('恢复前安全备份来源无效');
     const target = new File(safetyDirectory, 'last-restore.zip');
+    if (Platform.OS === 'android') {
+      // Expo SDK 57's legacy file:// move uses one rename in this directory.
+      // File.move with overwrite unlinks the current undo archive first.
+      await moveAsync({ from: pending.uri, to: target.uri });
+      return;
+    }
     await pending.move(target, { overwrite: true });
   }
 

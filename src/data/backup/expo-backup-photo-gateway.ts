@@ -1,10 +1,11 @@
 import * as Crypto from 'expo-crypto';
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import { ImageManipulator } from 'expo-image-manipulator';
 
 import type { BackupPhotoGateway } from '@/application/ports/backup';
 import { BACKUP_ARCHIVE_LIMITS } from '@/data/backup/fflate-backup-archive-gateway';
 import { isManagedPoopPhotoPath } from '@/data/photo/managed-photo-path';
+import { BACKUP_JPEG_LIMITS, inspectBackupJpegHeader } from '@/domain/backup/backup-jpeg-budget';
 
 const photosDirectory = new Directory(Paths.document, 'poop-photos');
 
@@ -42,6 +43,14 @@ export class ExpoBackupPhotoGateway implements BackupPhotoGateway {
 
   async validateStaged(uri: string, byteLength: number, sha256: string) {
     const file = new File(uri);
+    if (!file.exists || file.size <= 0 || file.size > BACKUP_ARCHIVE_LIMITS.photoBytes) {
+      throw new Error('照片不存在或大小超出完整备份限制');
+    }
+    // Check dimensions before hashing the full file or invoking the native decoder.
+    const handle = file.open(FileMode.ReadOnly);
+    try {
+      inspectBackupJpegHeader(handle.readBytes(Math.min(file.size, BACKUP_JPEG_LIMITS.headerBytes)));
+    } finally { handle.close(); }
     const info = await fileHash(file);
     if (info.byteLength !== byteLength || info.sha256 !== sha256) throw new Error('备份照片完整性校验失败');
     if (info.bytes.length < 4 || info.bytes[0] !== 0xff || info.bytes[1] !== 0xd8
@@ -49,9 +58,10 @@ export class ExpoBackupPhotoGateway implements BackupPhotoGateway {
       throw new Error('备份照片不是有效的JPEG图片');
     }
     const context = ImageManipulator.manipulate(file.uri);
-    const image = await context.renderAsync();
-    image.release();
-    context.release();
+    try {
+      const image = await context.renderAsync();
+      image.release();
+    } finally { context.release(); }
   }
 
   async restoreStaged(uri: string, restoreSessionId: string, recordId: string, byteLength: number, sha256: string) {

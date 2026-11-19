@@ -245,8 +245,8 @@ try {
 
   $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
   $appConfig = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'app.json') -Encoding UTF8 | ConvertFrom-Json
-  Assert-Equal 'Expo version' ([string]$appConfig.expo.version) '1.2.1'
-  Assert-Equal 'Android versionCode' ([string]$appConfig.expo.android.versionCode) '9'
+  Assert-Equal 'Expo version' ([string]$appConfig.expo.version) '1.2.2'
+  Assert-Equal 'Android versionCode' ([string]$appConfig.expo.android.versionCode) '10'
   Assert-Equal 'Universal icon path' ([string]$appConfig.expo.icon) './assets/images/icon.png'
   Assert-Equal 'Adaptive foreground path' ([string]$appConfig.expo.android.adaptiveIcon.foregroundImage) `
     './assets/images/android-icon-foreground.png'
@@ -407,8 +407,8 @@ exit /b 1
   $releaseResult = $releaseResultJson | ConvertFrom-Json
   Assert-Equal 'Release dry-run mode' $releaseResult.Mode 'release-dry-run'
   Assert-Equal 'Release key configured' ([string]$releaseResult.KeyPropertiesConfigured) 'True'
-  Assert-Equal 'Release versionName' ([string]$releaseResult.VersionName) '1.2.1'
-  Assert-Equal 'Release versionCode' ([string]$releaseResult.VersionCode) '9'
+  Assert-Equal 'Release versionName' ([string]$releaseResult.VersionName) '1.2.2'
+  Assert-Equal 'Release versionCode' ([string]$releaseResult.VersionCode) '10'
   Assert-Equal 'Release Gradle tasks' ($releaseResult.GradleTasks -join ',') ':app:assembleRelease,:app:bundleRelease'
 
   # Use the production encoder so the preflight reads the same format Gradle receives.

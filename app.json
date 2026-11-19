@@ -2,7 +2,7 @@
   "expo": {
     "name": "宝宝今天",
     "slug": "baobao-today",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "baobaotoday",
@@ -12,7 +12,8 @@
     },
     "android": {
       "package": "com.baobaotoday.app",
-      "versionCode": 9,
+      "versionCode": 10,
+      "allowBackup": false,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -56,7 +57,8 @@
           "microphonePermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/with-local-only-backup.cjs"
     ],
     "experiments": {
       "typedRoutes": true,

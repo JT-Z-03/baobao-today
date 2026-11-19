@@ -5,17 +5,52 @@ import {
   ZipPassThrough,
   type UnzipFile,
 } from 'fflate';
+import { emitBackupProgress, type BackupProgressObserver } from '@/application/ports/backup';
+import {
+  BACKUP_CAPACITY_LIMITS,
+  inspectBackupCreationCapacity,
+  maximumBackupEntryBytes,
+} from '@/domain/backup/backup-capacity';
 
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
 const ZIP_EOCD_SIGNATURE = 0x06054b50;
-const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
-const MAX_CENTRAL_DIRECTORY_BYTES = 4 * 1024 * 1024;
-const MAX_ENTRY_COUNT = 10_003;
-const MAX_JSON_BYTES = 5 * 1024 * 1024;
-const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
-const MAX_TOTAL_EXTRACTED_BYTES = 512 * 1024 * 1024;
-const MAX_COMPRESSION_RATIO = 100;
+const MAX_ARCHIVE_BYTES = BACKUP_CAPACITY_LIMITS.archiveBytes;
+const MAX_CENTRAL_DIRECTORY_BYTES = BACKUP_CAPACITY_LIMITS.centralDirectoryBytes;
+const MAX_ENTRY_COUNT = BACKUP_CAPACITY_LIMITS.entryCount;
+const MAX_TOTAL_EXTRACTED_BYTES = BACKUP_CAPACITY_LIMITS.totalExtractedBytes;
+const MAX_COMPRESSION_RATIO = BACKUP_CAPACITY_LIMITS.compressionRatio;
 const DEFAULT_CHUNK_SIZE = 64 * 1024;
+const YIELD_BYTES = 256 * 1024;
+const YIELD_INTERVAL_MS = 8;
+const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+// A macrotask gives rendering/input a turn; Promise.resolve alone does not.
+// One synchronous codec push remains bounded by the input chunk, not by wall time.
+class ArchiveWorkBudget {
+  private bytes = 0;
+  private startedAt = Date.now();
+  async checkpoint(bytes: number, force = false) {
+    this.bytes += bytes;
+    if (!force && this.bytes < YIELD_BYTES && Date.now() - this.startedAt < YIELD_INTERVAL_MS) return;
+    await yieldToUi();
+    this.bytes = 0;
+    this.startedAt = Date.now();
+  }
+}
+
+async function readChunks(reader: ArchiveReader, chunkSize: number,
+  visit: (chunk: Uint8Array, final: boolean) => void, budget: ArchiveWorkBudget) {
+  if (reader.size === 0) { visit(new Uint8Array(), true); return; }
+  let offset = 0;
+  while (offset < reader.size) {
+    const requested = Math.min(chunkSize, reader.size - offset);
+    const chunk = reader.readAt(offset, requested);
+    if (chunk.length === 0 || chunk.length > requested) throw new Error('备份文件读取中断');
+    offset += chunk.length;
+    visit(chunk, offset === reader.size);
+    await budget.checkpoint(chunk.length);
+  }
+}
 
 export interface ArchiveReader {
   readonly size: number;
@@ -84,10 +119,6 @@ function validatePath(path: string, seen: Set<string>) {
   }
 }
 
-function maximumEntrySize(path: string) {
-  return path.startsWith('photos/') ? MAX_PHOTO_BYTES : MAX_JSON_BYTES;
-}
-
 function findEocd(tail: Uint8Array) {
   const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   for (let offset = tail.length - 22; offset >= 0; offset -= 1) {
@@ -96,7 +127,7 @@ function findEocd(tail: Uint8Array) {
   throw new ArchiveSecurityError('所选文件不是有效的ZIP归档');
 }
 
-function inspectCentralDirectory(reader: ArchiveReader): ArchiveInspection {
+async function inspectCentralDirectory(reader: ArchiveReader, observer?: BackupProgressObserver): Promise<ArchiveInspection> {
   if (reader.size < 22 || reader.size > MAX_ARCHIVE_BYTES) throw new ArchiveSecurityError('备份文件大小无效或过大');
   const tailSize = Math.min(reader.size, 65_557);
   const tail = reader.readAt(reader.size - tailSize, tailSize);
@@ -122,6 +153,8 @@ function inspectCentralDirectory(reader: ArchiveReader): ArchiveInspection {
   const seen = new Set<string>();
   let offset = 0;
   let totalUncompressedSize = 0;
+  const budget = new ArchiveWorkBudget();
+  emitBackupProgress(observer, { stage: 'inspect', completed: 0, total: entryCount, unit: 'files' });
   for (let index = 0; index < entryCount; index += 1) {
     if (offset + 46 > central.length || readU32(view, offset) !== ZIP_CENTRAL_SIGNATURE) {
       throw new ArchiveSecurityError('备份归档中央目录结构损坏');
@@ -148,7 +181,7 @@ function inspectCentralDirectory(reader: ArchiveReader): ArchiveInspection {
     const hostSystem = madeBy >> 8;
     const unixMode = externalAttributes >>> 16;
     if (hostSystem === 3 && (unixMode & 0xf000) === 0xa000) throw new ArchiveSecurityError('备份归档不得包含符号链接');
-    if (uncompressedSize > maximumEntrySize(path)) throw new ArchiveSecurityError('备份归档包含过大的单个文件');
+    if (uncompressedSize > maximumBackupEntryBytes(path)) throw new ArchiveSecurityError('备份归档包含过大的单个文件');
     if (uncompressedSize > 0 && (compressedSize === 0 || uncompressedSize / compressedSize > MAX_COMPRESSION_RATIO)) {
       throw new ArchiveSecurityError('备份归档解压比过高');
     }
@@ -164,6 +197,10 @@ function inspectCentralDirectory(reader: ArchiveReader): ArchiveInspection {
       localHeaderOffset,
     });
     offset = end;
+    if ((index + 1) % 64 === 0 || index + 1 === entryCount) {
+      emitBackupProgress(observer, { stage: 'inspect', completed: index + 1, total: entryCount, unit: 'files' });
+      await budget.checkpoint(0, true);
+    }
   }
   if (offset !== central.length) throw new ArchiveSecurityError('备份归档中央目录长度不一致');
   return { archiveSize: reader.size, entries, totalUncompressedSize };
@@ -184,12 +221,29 @@ export class FflateBackupArchiveGateway {
     options: { chunkSize?: number } = {},
   ) {
     this.chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
+    if (!Number.isSafeInteger(this.chunkSize) || this.chunkSize < 1 || this.chunkSize > DEFAULT_CHUNK_SIZE) {
+      throw new Error('归档读取块大小必须在1到65536字节之间');
+    }
   }
 
-  async createArchive(outputUri: string, entries: readonly ArchiveSourceEntry[]) {
+  async createArchive(outputUri: string, entries: readonly ArchiveSourceEntry[], observer?: BackupProgressObserver) {
     const seen = new Set<string>();
     for (const entry of entries) validatePath(entry.path, seen);
+    inspectBackupCreationCapacity(entries.map((entry) => ({ path: entry.path, byteLength: 0 })));
+    const sourceSizes = new Map<string, number>();
+    const budget = new ArchiveWorkBudget();
+    await budget.checkpoint(0, true);
+    for (const entry of entries) {
+      const reader = this.io.openReader(entry.sourceUri);
+      try { sourceSizes.set(entry.path, reader.size); }
+      finally { reader.close(); }
+      if (sourceSizes.size % 64 === 0) await budget.checkpoint(0, true);
+    }
+    inspectBackupCreationCapacity(entries.map((entry) => ({ path: entry.path, byteLength: sourceSizes.get(entry.path)! })));
     const writer = this.io.openWriter(outputUri);
+    const total = [...sourceSizes.values()].reduce((sum, size) => sum + size, 0);
+    let completed = 0;
+    emitBackupProgress(observer, { stage: 'archive', completed, total, unit: 'bytes' });
     let archiveError: Error | null = null;
     let closed = false;
     const zip = new Zip((error, chunk, final) => {
@@ -201,10 +255,15 @@ export class FflateBackupArchiveGateway {
       for (const entry of entries) {
         const source = this.io.openReader(entry.sourceUri);
         try {
-          if (source.size > maximumEntrySize(entry.path)) throw new ArchiveSecurityError('备份源文件过大');
+          if (source.size !== sourceSizes.get(entry.path)) throw new ArchiveSecurityError('备份源文件大小发生变化，请重试');
           const stream = new ZipPassThrough(entry.path);
           zip.add(stream);
-          source.forEachChunk(this.chunkSize, (chunk, final) => stream.push(chunk, final));
+          await readChunks(source, this.chunkSize, (chunk, final) => {
+            stream.push(chunk, final);
+            if (archiveError) throw archiveError;
+            completed += chunk.length;
+            emitBackupProgress(observer, { stage: 'archive', completed, total, unit: 'bytes' });
+          }, budget);
         } finally {
           source.close();
         }
@@ -214,28 +273,32 @@ export class FflateBackupArchiveGateway {
       if (archiveError) throw archiveError;
       if (!closed) throw new Error('ZIP归档未正常结束');
     } catch (error) {
-      if (!closed) writer.close();
+      if (!closed) {
+        try { writer.close(); } catch { /* Preserve the archive failure. */ }
+      }
       throw error;
     }
   }
 
-  async inspect(archiveUri: string) {
+  async inspect(archiveUri: string, observer?: BackupProgressObserver) {
     const reader = this.io.openReader(archiveUri);
     try {
-      return inspectCentralDirectory(reader);
+      return await inspectCentralDirectory(reader, observer);
     } finally {
       reader.close();
     }
   }
 
-  async extract(archiveUri: string, targets: ReadonlyMap<string, string>) {
-    const inspection = await this.inspect(archiveUri);
+  async extract(archiveUri: string, targets: ReadonlyMap<string, string>, observer?: BackupProgressObserver) {
+    const inspection = await this.inspect(archiveUri, observer);
     exactTargets(inspection, targets);
     const expected = new Map(inspection.entries.map((entry) => [entry.path, entry]));
     const completed = new Set<string>();
     const openWriters = new Set<ArchiveWriter>();
     let callbackError: Error | null = null;
     let totalWritten = 0;
+    const budget = new ArchiveWorkBudget();
+    emitBackupProgress(observer, { stage: 'extract', completed: 0, total: inspection.totalUncompressedSize, unit: 'bytes' });
     const unzip = new Unzip((file: UnzipFile) => {
       try {
         const inspected = expected.get(file.name);
@@ -275,27 +338,30 @@ export class FflateBackupArchiveGateway {
     });
     unzip.register(UnzipInflate);
     const reader = this.io.openReader(archiveUri);
+    let failed = false;
     try {
-      reader.forEachChunk(this.chunkSize, (chunk, final) => {
+      await readChunks(reader, this.chunkSize, (chunk, final) => {
         unzip.push(chunk, final);
         if (callbackError) throw callbackError;
-      });
+        emitBackupProgress(observer, { stage: 'extract', completed: totalWritten, total: inspection.totalUncompressedSize, unit: 'bytes' });
+      }, budget);
       if (callbackError) throw callbackError;
       if (completed.size !== inspection.entries.length) throw new ArchiveSecurityError('归档条目未完整解压');
+    } catch (error) {
+      failed = true;
+      throw error;
     } finally {
-      for (const writer of openWriters) writer.close();
-      reader.close();
+      let closeError: unknown;
+      for (const resource of [...openWriters, reader]) {
+        try { resource.close(); } catch (error) { closeError ??= error; }
+      }
+      if (!failed && closeError) throw closeError;
     }
     return inspection;
   }
 }
 
 export const BACKUP_ARCHIVE_LIMITS = {
-  archiveBytes: MAX_ARCHIVE_BYTES,
-  entryCount: MAX_ENTRY_COUNT,
-  jsonBytes: MAX_JSON_BYTES,
-  photoBytes: MAX_PHOTO_BYTES,
-  totalExtractedBytes: MAX_TOTAL_EXTRACTED_BYTES,
-  compressionRatio: MAX_COMPRESSION_RATIO,
+  ...BACKUP_CAPACITY_LIMITS,
   chunkBytes: DEFAULT_CHUNK_SIZE,
 } as const;

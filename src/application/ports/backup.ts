@@ -5,6 +5,22 @@ import type {
   BackupSettings,
 } from '@/domain/backup/backup-types';
 
+export interface BackupProgress {
+  stage: 'snapshot' | 'prepare-files' | 'archive' | 'inspect' | 'extract'
+    | 'validate-data' | 'validate-photos' | 'verify-export'
+    | 'restore-photos' | 'replace-data' | 'post-restore';
+  completed?: number;
+  total?: number;
+  unit?: 'bytes' | 'files';
+}
+
+export type BackupProgressObserver = (progress: BackupProgress) => void;
+
+// Progress is presentation only: a detached or failed observer cannot abort data work.
+export function emitBackupProgress(observer: BackupProgressObserver | undefined, progress: BackupProgress) {
+  try { observer?.(progress); } catch { /* Keep the backup/restore result authoritative. */ }
+}
+
 export type BackupSourceRecord = Omit<BackupRecord, 'photo_backup_entry' | 'photo_sha256'> & {
   source_photo_path: string | null;
 };
@@ -82,9 +98,9 @@ export interface BackupArchiveInspection {
 }
 
 export interface BackupArchiveGateway {
-  createArchive(outputUri: string, entries: readonly BackupArchiveEntry[]): Promise<void>;
-  inspect(archiveUri: string): Promise<BackupArchiveInspection>;
-  extract(archiveUri: string, targets: ReadonlyMap<string, string>): Promise<BackupArchiveInspection>;
+  createArchive(outputUri: string, entries: readonly BackupArchiveEntry[], observer?: BackupProgressObserver): Promise<void>;
+  inspect(archiveUri: string, observer?: BackupProgressObserver): Promise<BackupArchiveInspection>;
+  extract(archiveUri: string, targets: ReadonlyMap<string, string>, observer?: BackupProgressObserver): Promise<BackupArchiveInspection>;
 }
 
 export interface BackupPhotoSource {

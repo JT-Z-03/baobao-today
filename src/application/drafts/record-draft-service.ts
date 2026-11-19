@@ -1,11 +1,32 @@
 import type { WorkflowState, WorkflowStateStore } from '@/application/ports/workflow-state';
+import type { DraftAttachmentStore } from '@/application/ports/draft-attachment';
 import { draftKey, isPendingDraft, type DraftValues, type RecordDraft, type RecordKind } from '@/domain/drafts/record-draft';
 import { createTimer, transitionTimer, timerMinutes, timerTotals, type BreastSide, type TimerAction } from '@/domain/feeding/breastfeeding-timer';
 
 export type DraftScope = { babyId: string; kind: RecordKind; recordId?: string | null };
 export class DraftStateError extends Error {}
 
-export function createRecordDraftService(store: WorkflowStateStore, now: () => number, createId: () => string) {
+const unavailableAttachments: DraftAttachmentStore = {
+  isManaged: () => false,
+  persist: async () => { throw new Error('草稿照片暂不可用，请重试'); },
+  remove: async () => undefined,
+  cleanup: async () => undefined,
+};
+
+export function createRecordDraftService(store: WorkflowStateStore, now: () => number, createId: () => string,
+  attachments: DraftAttachmentStore = unavailableAttachments) {
+  const protectedAttachments: DraftAttachmentStore = {
+    isManaged: (uri) => attachments.isManaged(uri),
+    persist: (source) => attachments.persist(source),
+    remove: async (uri) => {
+      if ((await store.read()).quarantinedDrafts?.length) return;
+      await attachments.remove(uri);
+    },
+    cleanup: async (references, olderThanMs) => {
+      if ((await store.read()).quarantinedDrafts?.length) return;
+      await attachments.cleanup(references, olderThanMs);
+    },
+  };
   const listeners = new Set<() => void>();
   const emit = () => listeners.forEach((listener) => listener());
   async function change<T>(update: (state: WorkflowState) => T) {
@@ -33,6 +54,12 @@ export function createRecordDraftService(store: WorkflowStateStore, now: () => n
   }
   return {
     store,
+    attachments: protectedAttachments,
+    async cleanupDiscardedAttachment(draft: RecordDraft | null) {
+      if (draft?.kind === 'poop' && draft.values.photoChange.kind === 'replace') {
+        await protectedAttachments.remove(draft.values.photoChange.source.uri);
+      }
+    },
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     async get(scope: DraftScope) {
       const state = await store.read();
@@ -50,6 +77,9 @@ export function createRecordDraftService(store: WorkflowStateStore, now: () => n
       return change((state) => {
         if (state.restore) throw new DraftStateError('上次恢复被中断，旧草稿需核对');
         const key = draftKey(scope.babyId, scope.kind, scope.recordId);
+        if (state.quarantinedDrafts?.some((entry) => entry.key === key)) {
+          throw new DraftStateError('这类草稿存在异常内容，已隔离保留，请先核对后再新建');
+        }
         const current = state.drafts[key];
         if (current && isPendingDraft(current)) throw new DraftStateError('已有未完成记录，请先继续或放弃它');
         const draft = { id: createId(), key, kind: scope.kind, babyId: scope.babyId,

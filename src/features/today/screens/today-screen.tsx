@@ -1,10 +1,12 @@
 import { PendingRecordsEntry } from '@/features/records/components/pending-records-entry';
+import { RestoreResultNotice } from '@/features/backup/components/restore-result-notice';
 import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { AppState as NativeAppState, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { AccessibilityInfo, AppState as NativeAppState, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
+import type { RestoreService } from '@/application/backup/restore-service';
 import type { FeedingService } from '@/application/feeding/feeding-service';
 import type { PoopService } from '@/application/poop/poop-service';
 import type { PeeService } from '@/application/pee/pee-service';
@@ -89,15 +91,37 @@ function SleepMetricValue({ durationMs }: { durationMs: number }) {
   );
 }
 
+function RestoreCompletionNotice({ service }: { service: RestoreService }) {
+  const pending = useSyncExternalStore(service.subscribeResult, service.getCompletion, service.getCompletion);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    if (!pending) return;
+    const show = () => {
+      const action = service.takeCompletion();
+      if (!action) return;
+      const text = action === 'undo' ? '已撤销上次恢复。' : '备份恢复已完成。';
+      setMessage(text);
+      AccessibilityInfo.announceForAccessibility(text);
+    };
+    const subscription = NativeAppState.addEventListener('change', (state) => {
+      if (state === 'active') show();
+    });
+    if (NativeAppState.currentState === 'active' || NativeAppState.currentState == null) show();
+    return () => subscription.remove();
+  }, [pending, service]);
+  return message ? <ThemedText type="smallBold">{message}</ThemedText> : null;
+}
+
 export function TodayScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const focused = useIsFocused();
   const { width, fontScale } = useWindowDimensions();
   const wrapActions = Math.min(width, 640) - 40 < 320 || fontScale > 1.3;
   const [detailsVisible, setDetailsVisible] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
-  const { babyProfile, feedingService, poopService, peeService, sleepService, otherService } = useAppState();
+  const { babyProfile, feedingService, poopService, peeService, sleepService, otherService, restoreService, maintenanceError, retryMaintenance } = useAppState();
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
   const todayDate = toLocalDateKey(clockNowMs);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -206,6 +230,13 @@ export function TodayScreen() {
         </View>
       </View>
 
+      <RestoreResultNotice service={restoreService} />
+      {focused && !loading && !loadError && dashboard && restoreService
+        ? <RestoreCompletionNotice service={restoreService} /> : null}
+      {maintenanceError ? <View style={styles.section}>
+        <ThemedText type="small" themeColor="danger" accessibilityLiveRegion="polite">{maintenanceError}</ThemedText>
+        <AppButton label="重试维护" variant="secondary" onPress={retryMaintenance} />
+      </View> : null}
       {loading ? <LoadingState message="正在读取今天的记录" /> : loadError ? (
         <View style={styles.section}>
           <ErrorState message="今日记录加载失败，请重试。" />
@@ -213,7 +244,7 @@ export function TodayScreen() {
         </View>
       ) : dashboard ? (
         <>
-            <Pressable accessibilityRole="button" accessibilityLabel={dashboard.feeding.latest ? '编辑最近喝奶记录' : '新增喝奶记录'} onPress={() => dashboard.feeding.latest ? openFeeding(dashboard.feeding.latest.id) : openNewFeeding()} style={styles.latestLink}>
+            <Pressable accessibilityRole="button" accessibilityLabel={dashboard.feeding.latest ? '编辑最近喝奶记录' : '新增喝奶记录'} accessibilityValue={{ text: dashboard.feeding.latest ? `${formatRecordTime(dashboard.feeding.latest.eventTimeMs, clockNowMs)}，${formatFeedingDetails(dashboard.feeding.latest)}` : '还没有喝奶记录' }} onPress={() => dashboard.feeding.latest ? openFeeding(dashboard.feeding.latest.id) : openNewFeeding()} style={styles.latestLink}>
               <ThemedText themeColor="textSecondary">{dashboard.feeding.latest ? `上次喝奶${formatRelativePastTime(dashboard.feeding.latest.eventTimeMs, clockNowMs)}` : '还没有喝奶记录'}</ThemedText>
               {dashboard.feeding.latest ? <ThemedText type="small" themeColor="textSecondary">{formatRecordTime(dashboard.feeding.latest.eventTimeMs, clockNowMs)} · {formatFeedingDetails(dashboard.feeding.latest)}</ThemedText> : null}
             </Pressable>
