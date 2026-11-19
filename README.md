@@ -8,17 +8,17 @@ Android 版现已提供安装包，支持 Android 7.0 及以上。iOS 仍在计�
 
 ## 下载与安装
 
-**[下载宝宝今天 1.2.1 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/baobao-today-1.2.1-code9.apk)** · [SHA256SUMS.txt](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/SHA256SUMS.txt) · [发布说明](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.1)
+**[下载宝宝今天 1.2.2 · Android APK](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.2/baobao-today-1.2.2-code10.apk)** · [SHA256SUMS.txt](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.2/SHA256SUMS.txt) · [发布说明](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.2)
 
 1. 在 Android 手机上下载上面的 `.apk` 文件，打开并按系统提示安装。若系统询问，允许当前浏览器或文件管理器安装此应用。
 2. 已安装旧版的用户可直接覆盖升级；不要先卸载，以免删除手机中的本地记录。
 3. 安装后直接使用，无需注册账号。宝宝资料、记录和照片保存在当前手机，可在设置中创建完整备份。
 
-GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.2.1 / code 9`，设置页显示 `1.2.1 (9)`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。更新描述：修复了一些已知bug。历史版本见 [Releases](https://github.com/JT-Z-03/baobao-today/releases)。
+GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接安装到手机。当前安装包为 `1.2.2 / code 10`，设置页显示 `1.2.2 (10)`；通用 APK 已包含 ARM 和 x86 架构，无需按手机型号选择。历史版本见 [Releases](https://github.com/JT-Z-03/baobao-today/releases)。
 
 ## 当前源码状态
 
-1.2.2（code 10）源码扩大完整备份的记录容量，改进恢复前准备、恢复结果提示和照片清理重试。安装用户可在上方下载区查看当前公开版本。备份的容量与旧版兼容范围见[数据导出与备份](docs/DATA-PORTABILITY.md)。
+Android 1.2.2（code 10）已发布，支持更大的完整备份；恢复过程中点击返回能更快看到提示。恢复完成后，照片清理失败时可重试。备份的容量与旧版兼容范围见[数据导出与备份](docs/DATA-PORTABILITY.md)。
 
 ## 功能
 
@@ -84,7 +84,7 @@ SQLite 是业务数据的事实来源，当前 `user_version=9`。完整备份�
 - 宝宝资料和五类记录默认保存在当前设备的本地 SQLite 数据库中；大便照片保存在应用管理的本地文件目录中。
 - CSV 仅用于查看和分享，不包含照片，也不是完整备份。
 - ZIP 是完整本地备份，但当前未加密，需要用户自行安全保存。
-- 1.2.2 源码关闭 Android 自动备份并排除系统迁移；旧版及历史系统备份副本仍受原设置影响。
+- 1.2.2 关闭 Android 自动备份并排除系统迁移；旧版及历史系统备份副本仍受原设置影响。
 
 详情见 [隐私说明](PRIVACY.md) 和 [数据导出与备份](docs/DATA-PORTABILITY.md)。
 

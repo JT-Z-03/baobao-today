@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-当前维护版本为 Android `1.2.1`（`versionCode=9`）。iOS 和 Web 尚未完成产品验收。
+当前维护版本为 Android `1.2.2`（`versionCode=10`）。iOS 和 Web 尚未完成产品验收。
 
 ## 报告安全问题
 

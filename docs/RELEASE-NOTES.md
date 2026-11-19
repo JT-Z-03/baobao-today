@@ -1,20 +1,22 @@
 # 更新记录
 
-## 待发布 · 1.2.2 / code 10
+<!-- published-release:start -->
+
+## 2026-11-19 · 1.2.2 / code 10
+
+[下载 Android 安装包](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.2/baobao-today-1.2.2-code10.apk) · [SHA256SUMS.txt](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.2/SHA256SUMS.txt) · [发布页](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.2)
 
 - 完整备份支持更大的记录库，恢复前准备备份时，点返回能更快收到处理提示。
 - 改进恢复完成、撤销和照片清理失败时的提示，支持重试后续处理。
 - 已安装 1.2.1 的用户可直接覆盖安装，保留本机记录与照片。新版备份中若 `records.json` 超过 5 MiB，请用 1.2.2 或更新版本恢复。
 
-<!-- published-release:start -->
+<!-- published-release:end -->
 
 ## 2026-10-10 · 1.2.1 / code 9
 
 [下载 Android 安装包](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/baobao-today-1.2.1-code9.apk) · [SHA256SUMS.txt](https://github.com/JT-Z-03/baobao-today/releases/download/v1.2.1/SHA256SUMS.txt) · [发布页](https://github.com/JT-Z-03/baobao-today/releases/tag/v1.2.1)
 
 修复了一些已知bug
-
-<!-- published-release:end -->
 
 ## 2026-09-20 · 1.2.0 · 更顺手的日常照护记录
 
