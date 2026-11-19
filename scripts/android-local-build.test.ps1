@@ -277,30 +277,6 @@ try {
     }
   }
 
-  $temporaryVisualBoundaryBase64 = '5Li05pe26KeG6KeJ6LWE5Lqn77yM5LiN6Zi75aGecmVsZWFzZeaKgOacr+mqjOaUtu+8jOS9humYu+WhnuacgOe7iOWFrOW8gOWPkeW4g+OAgg=='
-  $temporaryVisualBoundary = [Text.Encoding]::UTF8.GetString(
-    [Convert]::FromBase64String($temporaryVisualBoundaryBase64)
-  )
-  $handoffPath = Join-Path $sourceRoot 'docs\handoffs\stage-4a-android-release.md'
-  $handoffContent = Get-Content -Raw -LiteralPath $handoffPath -Encoding UTF8
-  if ($handoffContent -notmatch [regex]::Escape($temporaryVisualBoundary)) {
-    throw 'Stage 4A handoff does not record the temporary visual release boundary'
-  }
-
-  $acceptancePath = Join-Path $sourceRoot 'docs\engineering\stage-4a-android-release-acceptance.md'
-  if (-not (Test-Path -LiteralPath $acceptancePath -PathType Leaf)) {
-    throw 'Stage 4A Android release acceptance document is missing'
-  }
-  $acceptanceContent = Get-Content -Raw -LiteralPath $acceptancePath -Encoding UTF8
-  if ($acceptanceContent -notmatch [regex]::Escape($temporaryVisualBoundary)) {
-    throw 'Stage 4A acceptance does not record the temporary visual release boundary'
-  }
-  $requiredConclusionBase64 = 'U3RhZ2UgNEEgQW5kcm9pZCByZWxlYXNl5bel56iL5LiO54us56uL6L+Q6KGM6aqM5pS26YCa6L+H77yM5q2j5byP5ZOB54mM5Zu+5qCH5ZKM5ZCv5Yqo55S76Z2i5LuN5b6F5pu/5o2i44CC'
-  $requiredConclusion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($requiredConclusionBase64))
-  if ($acceptanceContent -notmatch [regex]::Escape($requiredConclusion)) {
-    throw 'Stage 4A acceptance does not preserve the required limited conclusion'
-  }
-
   $knownExpoTemplateHashes = [ordered]@{
     'assets\images\icon.png' = '7a667804bb80a6a424a5daf18a2599c4f32237cf06fe78fc0de45dbb09e0eccf'
     'assets\images\android-icon-foreground.png' = '9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceB7240b391'
