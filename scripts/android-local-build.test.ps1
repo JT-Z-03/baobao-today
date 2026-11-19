@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'android-local-build.ps1'
-$tempDirectory = (Resolve-Path -LiteralPath $env:TEMP).ProviderPath
+$tempDirectory = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $env:TEMP).ProviderPath)
 $testRoot = Join-Path $tempDirectory "baobao-android-build-test-$([guid]::NewGuid().ToString('N'))"
 $originalEnvironment = @{
   JAVA_HOME = $env:JAVA_HOME
@@ -644,7 +644,7 @@ exit /b 1
     Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
   }
   if (Test-Path -LiteralPath $testRoot) {
-    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).ProviderPath
+    $resolvedTestRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $testRoot).ProviderPath)
     if (-not [string]::Equals((Split-Path -Parent $resolvedTestRoot), $tempDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
         (Split-Path -Leaf $resolvedTestRoot) -notlike 'baobao-android-build-test-*') {
       throw 'Refusing to remove a test directory outside the expected temporary root'
