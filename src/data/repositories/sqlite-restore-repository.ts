@@ -1,4 +1,4 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SQLiteDatabase, SQLiteStatement } from 'expo-sqlite';
 
 import type { RestoreRepository } from '@/application/ports/backup';
 import type { BackupData, BackupRecordType } from '@/domain/backup/backup-types';
@@ -113,11 +113,31 @@ export function createSQLiteRestoreRepository(database: SQLiteDatabase) {
   return new SQLiteRestoreRepository({
     getFirstAsync: (sql, ...params) => database.getFirstAsync(sql, ...params),
     getAllAsync: (sql, ...params) => database.getAllAsync(sql, ...params),
-    withExclusiveTransactionAsync: (task) => database.withExclusiveTransactionAsync((transaction) => task({
-      execAsync: (sql) => transaction.execAsync(sql),
-      getFirstAsync: (sql, ...params) => transaction.getFirstAsync(sql, ...params),
-      getAllAsync: (sql, ...params) => transaction.getAllAsync(sql, ...params),
-      runAsync: (sql, ...params) => transaction.runAsync(sql, ...params),
-    })),
+    withExclusiveTransactionAsync: (task) => database.withExclusiveTransactionAsync(async (transaction) => {
+      let recordStatement: SQLiteStatement | undefined;
+      const releaseRecordStatement = async () => {
+        const statement = recordStatement;
+        recordStatement = undefined;
+        await statement?.finalizeAsync();
+      };
+      try {
+        await task({
+          execAsync: (sql) => transaction.execAsync(sql),
+          getFirstAsync: (sql, ...params) => transaction.getFirstAsync(sql, ...params),
+          getAllAsync: (sql, ...params) => transaction.getAllAsync(sql, ...params),
+          runAsync: async (sql, ...params) => {
+            if (sql === insertRecordSql) {
+              recordStatement ??= await transaction.prepareAsync(sql);
+              return recordStatement.executeAsync(...params);
+            }
+            // Finish record inserts before settings and the subsequent checks.
+            await releaseRecordStatement();
+            return transaction.runAsync(sql, ...params);
+          },
+        });
+      } finally {
+        await releaseRecordStatement();
+      }
+    }),
   });
 }

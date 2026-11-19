@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-当前维护版本为 Android `1.1.1`（`versionCode=6`），源码和维护者签名的 APK 均通过本仓库及 GitHub Releases 提供。iOS 尚未开始，Web 也未完成产品验收。
+当前维护版本为 Android `1.2.1`（`versionCode=9`）。iOS 和 Web 尚未完成产品验收。
 
 ## 报告安全问题
 

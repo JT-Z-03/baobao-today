@@ -10,7 +10,6 @@ import { ThemedText } from '@/components/themed-text';
 import { FormScreenState } from '@/components/ui/form-screen-state';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { RECORD_KIND_LABELS, type RecordDraft, type RecordKind } from '@/domain/drafts/record-draft';
-import { ExpoDraftAttachmentStore } from '@/data/workflow/expo-draft-attachment-store';
 import { DraftFormContext, type DraftFormContextValue } from '../hooks/use-record-draft';
 import { showRecordSaved } from './record-save-feedback';
 
@@ -52,7 +51,7 @@ function PersistentForm({ kind, recordId, children, babyId, service, lookup }: P
   const pending = useRef<Promise<unknown>>(Promise.resolve()); const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const changed = useRef(false); const closed = useRef(false); const mounted = useRef(true);
   const pendingNavigation = useRef<Parameters<typeof navigation.dispatch>[0] | null>(null);
-  const attachments = useRef(new ExpoDraftAttachmentStore());
+  const attachments = useRef(service.attachments);
   const submission = useRef(createRecordSubmissionService(service));
 
   useEffect(() => {
@@ -148,9 +147,7 @@ function PersistentForm({ kind, recordId, children, babyId, service, lookup }: P
     const current = prompt ?? draft.current;
     if (current) {
       const result = await service.discardWithGeneration(current.id);
-      if (current.kind === 'poop' && current.values.photoChange.kind === 'replace') {
-        await attachments.current.remove(current.values.photoChange.source.uri).catch(() => undefined);
-      }
+      await service.cleanupDiscardedAttachment(current).catch(() => undefined);
       if (result.generationChanged) {
         retryInitialization();
         return;

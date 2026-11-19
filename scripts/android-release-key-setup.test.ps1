@@ -2,7 +2,8 @@ $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'android-release-key-setup.ps1'
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$testRoot = Join-Path $env:TEMP "baobao-key-setup-test-$([guid]::NewGuid().ToString('N'))"
+$tempDirectory = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $env:TEMP).ProviderPath)
+$testRoot = Join-Path $tempDirectory "baobao-key-setup-test-$([guid]::NewGuid().ToString('N'))"
 
 function Assert-Equal([string]$label, [object]$actual, [object]$expected) {
   if ($actual -ne $expected) {
@@ -430,9 +431,8 @@ class PropertyPasswordProbe {
 } finally {
   Remove-ReadHostMock
   if (Test-Path -LiteralPath $testRoot) {
-    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).Path
-    $resolvedTempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
-    if (-not $resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedTestRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $testRoot).ProviderPath)
+    if (-not [string]::Equals((Split-Path -Parent $resolvedTestRoot), $tempDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
         (Split-Path -Leaf $resolvedTestRoot) -notlike 'baobao-key-setup-test-*') {
       throw 'Refusing to remove a test directory outside the expected temporary root'
     }

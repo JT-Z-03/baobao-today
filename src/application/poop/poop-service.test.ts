@@ -8,6 +8,7 @@ import type { PoopCoreInput, PoopRecord } from '@/domain/poop/poop';
 import { IdempotencyConflictError } from '@/domain/records/idempotency';
 
 import { createPoopService } from './poop-service';
+import { BackupRestoreCoordinator } from '@/application/backup/backup-restore-coordinator';
 
 const nowMs = new Date(2026, 6, 11, 8, 0).getTime();
 const core: PoopCoreInput = {
@@ -136,6 +137,36 @@ function setup() {
   });
   return { repository, photoStore, service };
 }
+
+test('canceled deferred photo cleanup rechecks the token after async reference lookup', async () => {
+  const { repository, photoStore, service } = setup();
+  photoStore.managed = ['poop-photos/orphan.jpg'];
+  let active = true;
+  jest.spyOn(repository, 'listReferencedPhotoPaths').mockImplementation(async () => { active = false; return []; });
+  await expect(service.cleanupOrphanPhotos(() => active)).resolves.toEqual({ deleted: 0, failed: 0 });
+  expect(photoStore.deleted).toEqual([]);
+  await service.cleanupOrphanPhotos();
+  expect(photoStore.deleted).toEqual(['poop-photos/orphan.jpg']);
+});
+
+test('deferred cleanup waits for the restore/write lock and reads references only after the active write commits', async () => {
+  const { repository, photoStore } = setup();
+  const coordinator = new BackupRestoreCoordinator();
+  const service = createPoopService(repository, photoStore, { now: () => nowMs, createId: () => 'new',
+    createClientRequestId: () => 'new-request', createPhotoId: () => 'photo', operationCoordinator: coordinator });
+  photoStore.managed = ['poop-photos/restored.jpg'];
+  let finish!: () => void;
+  const writing = coordinator.runExclusive(async () => {
+    await new Promise<void>((resolve) => { finish = resolve; });
+    repository.records.set('restored', record({ id: 'restored', photoUri: 'poop-photos/restored.jpg' }));
+  });
+  const list = jest.spyOn(photoStore, 'listManaged');
+  const cleanup = service.cleanupOrphanPhotos();
+  await Promise.resolve(); expect(list).not.toHaveBeenCalled();
+  finish(); await writing;
+  await expect(cleanup).resolves.toEqual({ deleted: 0, failed: 0 });
+  expect(photoStore.deleted).toEqual([]);
+});
 
 describe('poop application service photo compensation', () => {
   test('keeps a managed photo after a successful create', async () => {

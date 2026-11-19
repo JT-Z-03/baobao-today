@@ -21,6 +21,8 @@ test('dismissing date selection leaves value unchanged and time picker uses 24 h
   const maximumDate = new Date(2026, 8, 9);
   const view = await render(<RecordDateTimeField label="记录时间" valueMs={maximumDate.getTime()} maximumDate={maximumDate}
     onChange={onChange} dateAccessibilityLabel="修改日期" timeAccessibilityLabel="修改时间" />);
+  expect(view.getByLabelText('修改日期').props.accessibilityValue).toEqual({ text: '2026年9月9日' });
+  expect(view.getByLabelText('修改时间').props.accessibilityValue).toEqual({ text: '00:00' });
   await fireEvent.press(view.getByLabelText('修改日期'));
   const datePicker = view.getByTestId('date-time-picker');
   expect(datePicker.props.maximumDate).toBe(maximumDate);

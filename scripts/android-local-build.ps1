@@ -334,6 +334,8 @@ try {
   }
   node (Join-Path $resolvedBuildRoot 'scripts\patch-expo-drive-root.cjs')
   if ($LASTEXITCODE -ne 0) { throw 'Expo drive-root compatibility check failed' }
+  node (Join-Path $resolvedBuildRoot 'scripts\patch-expo-file-handle.cjs')
+  if ($LASTEXITCODE -ne 0) { throw 'Expo file-handle compatibility check failed' }
   npx expo prebuild --platform android --no-install
   if ($LASTEXITCODE -ne 0) { throw "Expo prebuild failed with exit code $LASTEXITCODE" }
 

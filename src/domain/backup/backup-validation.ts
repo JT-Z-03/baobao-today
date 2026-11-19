@@ -7,6 +7,7 @@ import type {
   BackupSettings,
 } from './backup-types';
 import { BACKUP_FORMAT_VERSION } from './backup-manifest';
+import { BACKUP_RECORD_BATCH_SIZE, finishBackupBatches } from './backup-batches';
 
 export class BackupValidationError extends Error {
   constructor(
@@ -45,8 +46,19 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[], labe
 }
 
 function text(value: unknown, label: string, min: number, max: number) {
-  const length = typeof value === 'string' ? [...value].length : -1;
-  if (typeof value !== 'string' || length < min || length > max) fail('invalid-text', `${label}无效`);
+  if (typeof value !== 'string' || value.length < min || value.length > max * 2) {
+    fail('invalid-text', `${label}无效`);
+  }
+  // Each code point uses one or two UTF-16 units. Most bounded notes/IDs need no scan.
+  if (value.length <= max && (min <= 1 || value.length >= min * 2)) return value;
+  let length = 0;
+  for (let index = 0; index < value.length; index++) {
+    if (++length > max) fail('invalid-text', `${label}无效`);
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff
+      && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) index++;
+  }
+  if (length < min) fail('invalid-text', `${label}无效`);
   return value;
 }
 
@@ -233,15 +245,27 @@ export function validateBackupData(
   raw: unknown,
   formatVersion: BackupFormatVersion = BACKUP_FORMAT_VERSION,
 ): BackupData {
+  return finishBackupBatches(validateBackupDataInBatches(raw, formatVersion));
+}
+
+export function* validateBackupDataInBatches(
+  raw: unknown,
+  formatVersion: BackupFormatVersion = BACKUP_FORMAT_VERSION,
+): Generator<void, BackupData> {
   const value = object(raw, '备份数据');
   exactKeys(value, ['baby', 'records', 'settings'], '备份数据');
   if (!Array.isArray(value.records) || value.records.length > 100_000) fail('invalid-records', '记录列表无效或过大');
-  const records = value.records.map((record, index) => validateRecord(record, index, formatVersion));
+  const records: BackupRecord[] = [];
+  for (let index = 0; index < value.records.length; index++) {
+    records.push(validateRecord(value.records[index], index, formatVersion));
+    if (records.length % BACKUP_RECORD_BATCH_SIZE === 0) yield;
+  }
   const ids = new Set<string>();
   const requests = new Set<string>();
   const photos = new Set<string>();
   let sleeping = 0;
-  for (const record of records) {
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index];
     if (ids.has(record.id)) fail('duplicate-record-id', '备份中存在重复记录ID');
     if (requests.has(record.client_request_id)) fail('duplicate-request-id', '备份中存在重复请求ID');
     ids.add(record.id);
@@ -251,6 +275,7 @@ export function validateBackupData(
       if (photos.has(record.photo_backup_entry)) fail('duplicate-photo-reference', '同一照片被多条记录引用');
       photos.add(record.photo_backup_entry);
     }
+    if ((index + 1) % BACKUP_RECORD_BATCH_SIZE === 0) yield;
   }
   return { baby: validateBaby(value.baby), records, settings: validateSettings(value.settings) };
 }

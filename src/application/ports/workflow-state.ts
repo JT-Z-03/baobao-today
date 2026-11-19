@@ -5,6 +5,8 @@ export type WorkflowState = {
   format: 1; generation: string;
   restore: { id: string; previousGeneration: string } | null;
   drafts: Record<string, RecordDraft>; exports: BackupExportReceipt[];
+  // Preserved JSON of isolated entries. Never enters business records or backup.
+  quarantinedDrafts?: { key: string; raw: string; reason: string }[];
 };
 export interface WorkflowStateStore {
   read(): Promise<WorkflowState>;

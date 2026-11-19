@@ -1,0 +1,8 @@
+{
+  "package": "expo-modules-autolinking",
+  "version": "57.0.18",
+  "tarball": "https://registry.npmjs.org/expo-modules-autolinking/-/expo-modules-autolinking-57.0.18.tgz",
+  "integrity": "sha512-relV8hky6gX6/7FoGYuAYmnTeq8OZlT1QjfgZzFVGoJ9KnGqOzMsojYaV39hTUAwWF6NCrEkISEZM0lNGdXgdw==",
+  "gitHead": "968a9dcec304789b2ccc1a41ef5d301938e91478",
+  "note": "Only the four patched compiled sources, package metadata and upstream MIT license are retained. Source bytes are unmodified; .txt avoids loading or linting third-party fixture code. Tests normalize Git CRLF to the original npm LF before verifying SHA-256."
+}

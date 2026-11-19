@@ -158,8 +158,9 @@ export function createPoopService(
     }));
   }
 
-  async function cleanupOrphanPhotos() {
+  async function cleanupOrphanPhotos(isActive: () => boolean = () => true) {
     return runMutation(() => photoOperationQueue.run(async () => {
+      if (!isActive()) return { deleted: 0, failed: 0 };
       const [referenced, managed] = await Promise.all([
         repository.listReferencedPhotoPaths(),
         photoStore.listManaged(),
@@ -168,9 +169,11 @@ export function createPoopService(
       let deleted = 0;
       let failed = 0;
       for (const entry of managed) {
+        if (!isActive()) break;
         if (references.has(entry.relativePath)) continue;
         if (dependencies.now() - entry.lastModifiedMs < ORPHAN_PHOTO_MIN_AGE_MS) continue;
         references = new Set(await repository.listReferencedPhotoPaths());
+        if (!isActive()) break;
         if (references.has(entry.relativePath)) continue;
         try {
           await photoStore.deleteManaged(entry.relativePath);

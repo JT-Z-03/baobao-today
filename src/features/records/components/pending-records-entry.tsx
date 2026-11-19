@@ -1,5 +1,5 @@
 import { useLocalClock } from '@/hooks/use-local-clock';
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useAppState } from '@/application/app-state/app-state-provider';
@@ -8,7 +8,6 @@ import { RECORD_KIND_LABELS, type RecordDraft } from '@/domain/drafts/record-dra
 import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
 import { ThemedText } from '@/components/themed-text';
 import { AppButton } from '@/components/ui/app-button';
-import { ExpoDraftAttachmentStore } from '@/data/workflow/expo-draft-attachment-store';
 import { Spacing } from '@/constants/theme';
 
 type DiscardRecovery = {
@@ -51,10 +50,13 @@ function getDiscardRecoveryStore(service: RecordDraftService | null) {
 
 export function PendingRecordsEntry() {
   const app = useAppState();
-  const { draftService, babyProfile, retryInitialization } = app; const router = useRouter();
+  const { draftService, babyProfile, retryInitialization, draftWarning } = app; const router = useRouter();
   const nowMs = useLocalClock();
   const [state, setState] = useState<Awaited<ReturnType<RecordDraftService['list']>> | null>(null);
   const [localSelected, setSelected] = useState<RecordDraft | null>(null); const [localError, setError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+  const listRequest = useRef({ revision: 0 });
   const recoveryStore = getDiscardRecoveryStore(draftService);
   const recovery = useSyncExternalStore(recoveryStore.subscribe, recoveryStore.getSnapshot, recoveryStore.getSnapshot);
   const selected = recovery?.draft ?? localSelected;
@@ -62,13 +64,24 @@ export function PendingRecordsEntry() {
   const discardBusy = !!recovery?.busy;
   const discardCommitted = !!recovery?.committed;
   const refresh = useCallback(() => {
-    if (draftService) void draftService.list().then(setState).catch(() => setError('未完成记录暂时无法读取，请稍后重试'));
+    if (!draftService) return;
+    const request = ++listRequest.current.revision;
+    void draftService.list().then((next) => {
+      if (request !== listRequest.current.revision) return;
+      setState(next); setListError(null);
+    }).catch(() => {
+      if (request === listRequest.current.revision) setListError('未完成记录暂时无法读取，请重试');
+    }).finally(() => { if (request === listRequest.current.revision) setListLoading(false); });
   }, [draftService]);
-  useEffect(() => { refresh(); return draftService?.subscribe(refresh); }, [draftService, refresh]);
-  if (!draftService || (!state?.drafts.length && !state?.quarantined && !error && !selected)) return null;
+  useEffect(() => {
+    refresh(); const unsubscribe = draftService?.subscribe(refresh);
+    const request = listRequest.current;
+    return () => { request.revision++; unsubscribe?.(); };
+  }, [draftService, refresh]);
+  if (!draftService || (!state?.drafts.length && !state?.quarantined && !error && !listError && !selected && !draftWarning)) return null;
   const open = async (draft: RecordDraft, quarantined: boolean) => {
     if (recoveryStore.getSnapshot()?.busy || recoveryStore.getSnapshot()?.committed) return;
-    recoveryStore.set(null); setSelected(null);
+    recoveryStore.set(null); setSelected(null); setError(null);
     if (quarantined) { setSelected(draft); return; }
     try {
       const lookup = app[`${draft.kind}Service` as 'feedingService'];
@@ -94,8 +107,7 @@ export function PendingRecordsEntry() {
       recoveryStore.set({ ...recoveryStore.getSnapshot()!,
         pendingRefresh: !!recoveryStore.getSnapshot()?.pendingRefresh || result.generationChanged || !!state?.quarantined,
         committed: true });
-      const removed = result.draft;
-      if (removed?.kind === 'poop' && removed.values.photoChange.kind === 'replace') await new ExpoDraftAttachmentStore().remove(removed.values.photoChange.source.uri);
+      await draftService.cleanupDiscardedAttachment(result.draft);
       if (recoveryStore.getSnapshot()?.pendingRefresh) retryInitialization();
       recoveryStore.set(null); setSelected(null); setError(null);
     } catch {
@@ -108,6 +120,9 @@ export function PendingRecordsEntry() {
   };
   return <View style={{ gap: Spacing.sm }}>
     <ThemedText type="subtitle">继续未完成记录</ThemedText>
+    {draftWarning ? <ThemedText themeColor="warning" accessibilityLiveRegion="polite">{draftWarning}</ThemedText> : null}
+    {listError ? <><ThemedText themeColor="danger" accessibilityLiveRegion="polite">{listError}</ThemedText>
+      <AppButton label="重试读取未完成记录" variant="secondary" loading={listLoading} onPress={() => { setListLoading(true); refresh(); }} /></> : null}
     {error ? <ThemedText themeColor="danger">{error}</ThemedText> : null}
     {error && discardCommitted ? <ThemedText>这条草稿已经放弃，后续处理未完成；请重试重新载入当前资料。</ThemedText> : null}
     {state?.quarantined ? <><ThemedText>上次恢复被中断。请重新载入当前资料；旧草稿会保留供逐条核对。</ThemedText><AppButton label="重新载入当前资料" disabled={discardBusy || discardCommitted} onPress={() => { if (recoveryStore.getSnapshot()?.busy || recoveryStore.getSnapshot()?.committed) return; void draftService.resolveInterruptedRestore().then(retryInitialization).catch(() => setError("重新载入失败，请重试")); }} /></> : null}

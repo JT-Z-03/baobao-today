@@ -2,7 +2,7 @@ import { useLocalClock } from '@/hooks/use-local-clock';
 import { useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
 import type { RestoreSummary as RestoreSummaryData } from '@/application/backup/backup-validation-service';
@@ -19,6 +19,15 @@ import { useTheme } from '@/hooks/use-theme';
 import type { GeneratedBackup } from '@/application/backup/backup-export-service';
 import type { BackupExportReceipt } from '@/application/ports/backup-export';
 import { formatRecordTime } from '@/domain/date/record-time-shortcuts';
+import type { BackupProgress } from '@/application/ports/backup';
+import { RestoreResultNotice, useRestoreResult } from '@/features/backup/components/restore-result-notice';
+
+const progressLabels: Record<BackupProgress['stage'], string> = {
+  snapshot: '正在读取已保存资料', 'prepare-files': '正在准备备份照片', archive: '正在生成备份文件',
+  inspect: '正在检查备份结构', extract: '正在解压备份', 'validate-data': '正在校验记录',
+  'validate-photos': '正在校验照片', 'verify-export': '正在校验生成的备份',
+  'restore-photos': '正在恢复照片', 'replace-data': '正在替换本机资料', 'post-restore': '正在整理恢复结果',
+};
 
 type PreparedMode = 'restore' | 'undo';
 type Confirmation = 'create' | 'restore' | null;
@@ -28,6 +37,7 @@ export function BackupRestoreScreen() {
   const router = useRouter();
   const nowMs = useLocalClock();
   const { backupService, restoreService, backupExportService, draftService } = useAppState();
+  const restoreResult = useRestoreResult(restoreService);
   const [generated, setGenerated] = useState<GeneratedBackup | null>(null);
   const [lastSaved, setLastSaved] = useState<BackupExportReceipt | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -39,7 +49,8 @@ export function BackupRestoreScreen() {
   const [undoAvailable, setUndoAvailable] = useState(false);
   const [returnHome, setReturnHome] = useState(false);
   const busyRef = useRef(false);
-  const busy = phase !== null;
+  const busy = phase !== null || !!restoreResult?.busy;
+  const blocked = busy || !!restoreResult;
 
   usePreventRemove(busy, () => {
     setMessage('正在处理本地数据，请完成后再返回。');
@@ -75,6 +86,7 @@ export function BackupRestoreScreen() {
     busyRef.current = true;
     setPhase(nextPhase);
     setMessage(null);
+    if (Platform.OS === 'android') AccessibilityInfo.announceForAccessibility(nextPhase);
     return true;
   };
 
@@ -82,15 +94,23 @@ export function BackupRestoreScreen() {
     busyRef.current = false;
     setPhase(null);
   };
+  const progress = (value: BackupProgress) => {
+    let amount = '';
+    if (value.total !== undefined && value.completed !== undefined) {
+      if (value.unit === 'files') amount = `（${value.completed}/${value.total}）`;
+      if (value.unit === 'bytes' && value.total > 0) amount = `（${Math.min(100, Math.floor(value.completed / value.total * 100))}%）`;
+    }
+    setPhase(progressLabels[value.stage] + amount);
+  };
 
   const executeCreate = async () => {
     if (!begin('正在读取数据并处理照片')) return;
     try {
       if (backupExportService) {
-        setGenerated(await backupExportService.create());
+        setGenerated(await backupExportService.create(progress));
         setMessage('备份已生成，请选择保存位置。尚未保存到应用外。');
       } else {
-        await backupService.createAndShare();
+        await backupService.createAndShare(progress);
         setMessage('完整备份已生成，系统分享面板已关闭。请确认已在目标应用中妥善保存。');
       }
     } catch (error) {
@@ -123,7 +143,7 @@ export function BackupRestoreScreen() {
   const prepareRestore = async (mode: PreparedMode) => {
     if (!begin(mode === 'undo' ? '正在校验恢复前安全备份' : '正在校验备份')) return;
     try {
-      const prepared = mode === 'undo' ? await restoreService.prepareUndo() : await restoreService.pickAndPrepare();
+      const prepared = mode === 'undo' ? await restoreService.prepareUndo(progress) : await restoreService.pickAndPrepare(progress);
       if (!prepared) {
         setMessage('已取消选择备份文件。');
         return;
@@ -138,14 +158,12 @@ export function BackupRestoreScreen() {
   };
 
   const executeRestore = async () => {
-    if (!begin('正在创建恢复前安全备份并恢复数据')) return;
+    if (!begin(preparedMode === 'undo' ? '正在撤销上次恢复' : '正在创建恢复前安全备份并恢复数据')) return;
     try {
-      const result = await restoreService.confirmPrepared();
-      const warning = result.warnings.length
-        ? ' 数据已恢复，但部分文件清理、提醒同步或页面刷新需要在下次启动时继续。'
-        : '';
-      setMessage(`恢复成功。${warning}`);
-      setReturnHome(true);
+      const result = await restoreService.confirmPrepared(progress);
+      setSummary(null);
+      setMessage(null);
+      if (!result.warnings.length) setReturnHome(true);
     } catch (error) {
       setMessage(toSafeUiMessage(error, '恢复失败，当前数据和照片没有被部分覆盖。'));
     } finally {
@@ -172,6 +190,7 @@ export function BackupRestoreScreen() {
           <ThemedText style={styles.title} selectable>备份与恢复</ThemedText>
           <AppIcon name="backup" color={theme.primary} size={32} />
         </View>
+        <RestoreResultNotice service={restoreService} onAcknowledge={() => setReturnHome(true)} />
         <SectionCard>
           <ThemedText type="smallBold" themeColor="danger" selectable>完整备份包含宝宝的私密数据</ThemedText>
           <ThemedText type="small" themeColor="textSecondary" selectable>
@@ -186,9 +205,9 @@ export function BackupRestoreScreen() {
         </SectionCard>
 
         <View style={styles.actions}>
-          <AppButton accessibilityLabel="创建完整备份" disabled={busy} label="备份全部资料" onPress={() => setConfirmation('create')} />
-          <AppButton accessibilityLabel="从备份文件恢复" disabled={busy} label="从备份文件恢复" onPress={() => { void prepareRestore('restore'); }} variant="secondary" />
-          {undoAvailable ? <AppButton accessibilityLabel="撤销上次恢复" disabled={busy} label="撤销上次恢复" onPress={() => { void prepareRestore('undo'); }} variant="secondary" /> : null}
+          <AppButton accessibilityLabel="创建完整备份" disabled={blocked} label="备份全部资料" onPress={() => setConfirmation('create')} />
+          <AppButton accessibilityLabel="从备份文件恢复" disabled={blocked} label="从备份文件恢复" onPress={() => { void prepareRestore('restore'); }} variant="secondary" />
+          {undoAvailable ? <AppButton accessibilityLabel="撤销上次恢复" disabled={blocked} label="撤销上次恢复" onPress={() => { void prepareRestore('undo'); }} variant="secondary" /> : null}
         </View>
 
         {generated ? <SectionCard>
@@ -206,7 +225,7 @@ export function BackupRestoreScreen() {
           }} />
         </SectionCard> : null}
 
-        {phase ? <ThemedText accessibilityLiveRegion="polite" themeColor="textSecondary" selectable>{phase}</ThemedText> : null}
+        {phase ? <ThemedText accessibilityLiveRegion="none" themeColor="textSecondary" selectable>{phase}</ThemedText> : null}
         {message ? <ThemedText accessibilityLiveRegion="polite" themeColor={message.includes('失败') ? 'danger' : 'textSecondary'} selectable>{message}</ThemedText> : null}
         {summary ? (
           <View style={styles.summary}>

@@ -81,6 +81,48 @@ describe('backup business data validation', () => {
     expect(() => validateBackupData(value)).toThrow(BackupValidationError);
   });
 
+  test('preserves code-point limits and original strings for paired and lone surrogates', () => {
+    const units = ['a', '宝', '🍼', '\ud800', '\udfff', '\ud800x\udc00', 'e\u0301', '👨‍👩‍👧‍👦'];
+    for (const unit of units) {
+      for (const repetitions of [0, 1, 19, 20, 21, 100, 199, 200, 201]) {
+        const note = unit.repeat(repetitions);
+        const value = validData();
+        value.records[0].note = note;
+        if ([...note].length <= 200) expect(validateBackupData(value).records[0].note).toBe(note);
+        else expect(() => validateBackupData(value)).toThrow(expect.objectContaining({
+          name: 'BackupValidationError', code: 'invalid-text', message: '备注无效',
+        }));
+      }
+    }
+  });
+
+  test('matches the previous code-point length rule over deterministic mixed UTF-16 notes', () => {
+    let seed = 0x51031;
+    const units = ['a', '宝', '🍼', '\ud800', '\udfff', '\u0301'];
+    for (let sample = 0; sample < 300; sample++) {
+      let note = '';
+      for (let index = 0; index < 180 + sample % 50; index++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        note += units[seed % units.length];
+      }
+      const value = validData();
+      value.records[0].note = note;
+      if ([...note].length <= 200) expect(validateBackupData(value).records[0].note).toBe(note);
+      else expect(() => validateBackupData(value)).toThrow(expect.objectContaining({ code: 'invalid-text', message: '备注无效' }));
+    }
+  });
+
+  test.each([
+    ['🍼'.repeat(32), 'invalid-text'],
+    ['a'.repeat(63) + '🍼', 'invalid-hash'],
+    ['\ud800'.repeat(64), 'invalid-hash'],
+    ['a'.repeat(65), 'invalid-text'],
+  ])('keeps exact-length hash validation error semantics %#', (value, code) => {
+    const input = validData();
+    input.records[0].create_payload_hash = value;
+    expect(() => validateBackupData(input)).toThrow(expect.objectContaining({ code, message: '创建载荷hash无效' }));
+  });
+
   test('normalizes valid version one feeding records with an empty bottled amount', () => {
     const value = validVersionOneData();
     expect(validateBackupData(value, 1).records[0]).toMatchObject({

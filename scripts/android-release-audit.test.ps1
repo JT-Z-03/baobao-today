@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'android-release-audit.ps1'
-$testRoot = Join-Path $env:TEMP "baobao-release-audit-test-$([guid]::NewGuid().ToString('N'))"
+$tempDirectory = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $env:TEMP).ProviderPath)
+$testRoot = Join-Path $tempDirectory "baobao-release-audit-test-$([guid]::NewGuid().ToString('N'))"
 
 function Assert-Equal([string]$label, [string]$actual, [string]$expected) {
   if ($actual -ne $expected) {
@@ -9,13 +10,17 @@ function Assert-Equal([string]$label, [string]$actual, [string]$expected) {
   }
 }
 
-function New-TestArchive([string]$Path, [string]$DexContent) {
+function New-TestArchive([string]$Path, [string]$DexContent, [string[]]$SqliteAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')) {
   $payloadRoot = Join-Path $testRoot ([guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
   Set-Content -LiteralPath (Join-Path $payloadRoot 'classes.dex') -Value $DexContent -Encoding ASCII
   $zipPath = "$Path.zip"
   Compress-Archive -Path (Join-Path $payloadRoot '*') -DestinationPath $zipPath
   Move-Item -LiteralPath $zipPath -Destination $Path
+  $libRoot = if ([IO.Path]::GetExtension($Path) -eq '.aab') { 'base/lib' } else { 'lib' }
+  foreach ($abi in $SqliteAbis) {
+    Set-ArchiveEntry $Path "$libRoot/$abi/libexpo-sqlite.so" 'sqlite-library-fixture'
+  }
 }
 
 function Write-FakeManifestTool([string]$Path, [switch]$WithProhibitedPermission) {
@@ -136,6 +141,7 @@ exit /b 0
   Assert-Equal 'Certificate digest' $result.CertificateSha256 $certificateSha256
   Assert-Equal 'APK signature verified' ([string]$result.ApkSignatureVerified) 'True'
   Assert-Equal 'AAB signature verified' ([string]$result.AabSignatureVerified) 'True'
+  Assert-Equal 'SQLite ABI coverage for both artifacts' ($result.SqliteAbisVerifiedInBothArtifacts -join ',') 'arm64-v8a,armeabi-v7a,x86,x86_64'
   Write-Output 'Valid signature with self-signed certificate warning accepted'
   Assert-Equal 'Debuggable' ([string]$result.Debuggable) 'False'
   Assert-Equal 'Prohibited permission count' ([string]$result.ProhibitedPermissions.Count) '0'
@@ -143,6 +149,21 @@ exit /b 0
   Assert-Equal 'Development marker count' ([string]$result.DevelopmentMarkers.Count) '0'
   if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
     throw 'Release audit did not write its evidence JSON'
+  }
+
+  foreach ($extension in @('apk', 'aab')) {
+    $incomplete = Join-Path $testRoot "incomplete.$extension"
+    New-TestArchive $incomplete 'release-code' @('arm64-v8a')
+    $pair = @{ ApkPath = $apkPath; AabPath = $aabPath }
+    if ($extension -eq 'apk') { $pair.ApkPath = $incomplete } else { $pair.AabPath = $incomplete }
+    $rejectedOutput = Join-Path $testRoot "missing-abi-$extension.json"
+    $failure = $null
+    try {
+      & $scriptPath @pair -AndroidSdkRoot $sdkRoot -JavaHome $javaHome -OutputPath $rejectedOutput | Out-Null
+    } catch { $failure = $_.Exception.Message }
+    Assert-Equal "Missing $extension SQLite ABIs" $failure "incomplete.$extension missing libexpo-sqlite.so for ABI(s): armeabi-v7a, x86, x86_64"
+    if (Test-Path -LiteralPath $rejectedOutput) { throw "Audit recorded success for the incomplete $extension" }
+    Write-Output "Rejected $extension containing only the arm64 SQLite library"
   }
 
   $tamperedAab = Join-Path $testRoot 'tampered.aab'
@@ -205,9 +226,8 @@ exit /b 0
   Write-Output 'android release artifact signature, manifest, permission, and package-content audit tests: passed'
 } finally {
   if (Test-Path -LiteralPath $testRoot) {
-    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).Path
-    $resolvedTempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
-    if (-not $resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedTestRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $testRoot).ProviderPath)
+    if (-not [string]::Equals((Split-Path -Parent $resolvedTestRoot), $tempDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
         (Split-Path -Leaf $resolvedTestRoot) -notlike 'baobao-release-audit-test-*') {
       throw 'Refusing to remove a test directory outside the expected temporary root'
     }

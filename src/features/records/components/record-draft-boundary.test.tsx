@@ -17,9 +17,6 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ back: mockBack, replace: j
 jest.mock('expo-router/react-navigation', () => ({ useNavigation: () => ({ dispatch: mockDispatch }), usePreventRemove: jest.fn() }));
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: () => mockApp }));
 jest.mock('./record-save-feedback', () => ({ showRecordSaved: jest.fn() }));
-jest.mock('@/data/workflow/expo-draft-attachment-store', () => ({ ExpoDraftAttachmentStore: class {
-  persist = mockPersist; remove = mockRemove;
-} }));
 jest.mock('expo-image-picker', () => ({
   getPendingResultAsync: jest.fn(async () => null), requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
   launchImageLibraryAsync: jest.fn(),
@@ -30,7 +27,9 @@ function setup() {
   const store: WorkflowStateStore = { read: async () => structuredClone(state), transaction: async (update) => {
     const next = structuredClone(state); const result = update(next); state = next; return result;
   } };
-  const drafts = createRecordDraftService(store, Date.now, () => `id-${++id}`);
+  const drafts = createRecordDraftService(store, Date.now, () => `id-${++id}`, {
+    persist: mockPersist, remove: mockRemove, cleanup: async () => undefined, isManaged: () => true,
+  });
   mockApp = { babyProfile: { id: 'baby' }, draftService: drafts,
     otherService: { getById: async () => saved, getByClientRequestId: async () => saved } };
   const onSave = jest.fn(async (input, requestId) => { saved = { ...input, id: 'saved', updatedAtMs: 1000, clientRequestId: requestId }; });

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { BrandMark } from '@/components/ui/brand-mark';
 import { ScreenContainer } from '@/components/ui/screen-container';
@@ -8,12 +9,14 @@ import { toSafeUiMessage } from '@/features/system/safe-ui-message';
 type StartupErrorScreenProps = {
   message: string | null;
   onRetry(): void;
+  children?: ReactNode;
 };
 
-export function StartupErrorScreen({ message, onRetry }: StartupErrorScreenProps) {
+export function StartupErrorScreen({ message, onRetry, children }: StartupErrorScreenProps) {
   return (
     <ScreenContainer contentStyle={{ flexGrow: 1, maxWidth: 560, justifyContent: 'center' }}>
       <BrandMark />
+      {children}
       <ThemedText style={Typography.sectionTitle} selectable>无法打开本地数据</ThemedText>
       <ErrorState
         actionLabel="重试打开本地数据"

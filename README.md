@@ -18,16 +18,7 @@ GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接
 
 ## 当前源码状态
 
-- Android **1.2.1 / versionCode 9**：修复了一些已知bug。
-- 正式构建前，最终依赖基线的 110 组、698 项自动测试及 Expo Doctor 21/21 通过。最终 Release APK 在独立 API 36 模拟器完成同签名 code 8→9 覆盖升级、虚构记录/照片/设置/草稿保留、离线保存和原生备份恢复；此结果不代表新 APK 已完成全部真机异常流程验收。详见[测试说明](docs/TESTING.md)。
-- 2026-10-24 在 Android 14 手机上完成正式版 code 8→9 覆盖升级，使用者确认设置页版本、原记录及照片查看正常；这次手机验收不包含新增保存或异常流程，详见[测试说明](docs/TESTING.md)。
-- 1.2.0 引入的六项新手照护体验继续保留：奶量留空与历史量快捷填写、快速补记时间、五类本机草稿及保存反馈、首页直接展示尿布次数与亲喂摘要、左右亲喂计时、完整备份直接保存与校验。
-- 小便记录页直接展示尿量、颜色和备注，均为选填；取消“更多信息”的展开步骤，与大便记录页一致。
-- API 36 edge-to-edge safe-area fix included
-- Android functional baseline validated through automated tests, an API 36 emulator, and an Android 14 same-signature code 3→4 upgrade
-- Soft-rose UI: API 36 emulator checks and a 2026-09-12 Android 14 same-signature code 4→5 installation with launch, navigation, profile and keyboard smoke checks; the latter is not a full product regression
-- iOS has not been built or tested
-- Signed Android APK and SHA-256 checksum are available in GitHub Releases; binaries are not committed to Git history
+1.2.2（code 10）源码扩大完整备份的记录容量，改进恢复前准备、恢复结果提示和照片清理重试。安装用户可在上方下载区查看当前公开版本。备份的容量与旧版兼容范围见[数据导出与备份](docs/DATA-PORTABILITY.md)。
 
 ## 功能
 
@@ -66,11 +57,11 @@ GitHub 自动附带的 `Source code (zip/tar.gz)` 是开发源码，不能直接
 
 ## 技术栈
 
-- Expo SDK 57.0.27
+- Expo SDK 57.0.33
 - React Native 0.86.3 / React 19.2.3
-- TypeScript 6.0.3 / Expo Router 57.0.25
-- Expo SQLite 57.0.4
-- Jest 29.7.0 / jest-expo 57.0.5
+- TypeScript 6.0.3 / Expo Router 57.0.31
+- Expo SQLite 57.0.5
+- Jest 29.7.0 / jest-expo 57.0.6
 
 依赖的精确版本以 `package-lock.json` 为准。Expo SDK 57 的版本化文档见 [Expo SDK 57 文档](https://docs.expo.dev/versions/v57.0.0/)。
 
@@ -93,7 +84,7 @@ SQLite 是业务数据的事实来源，当前 `user_version=9`。完整备份�
 - 宝宝资料和五类记录默认保存在当前设备的本地 SQLite 数据库中；大便照片保存在应用管理的本地文件目录中。
 - CSV 仅用于查看和分享，不包含照片，也不是完整备份。
 - ZIP 是完整本地备份，但当前未加密，需要用户自行安全保存。
-- Android 系统级自动备份或设备迁移可能按系统策略处理应用数据；这与应用主动上传或产品同步不同。
+- 1.2.2 源码关闭 Android 自动备份并排除系统迁移；旧版及历史系统备份副本仍受原设置影响。
 
 详情见 [隐私说明](PRIVACY.md) 和 [数据导出与备份](docs/DATA-PORTABILITY.md)。
 
@@ -130,25 +121,21 @@ npm run start:dev-client
 
 项目使用原生模块，普通开发以 development build 为准。安装或升级原生依赖、修改 config plugin 或原生配置后，需要重新运行 `npm run android`。
 
-显示版本以 app.json 为准，package.json 与锁文件的项目版本保持同步。设置页读取实际安装包版本及构建号，显示如 1.2.1 (9)。发布时核对标签、文件名、包内版本和 SHA-256；GitHub 发布不会自动更新手机中的应用。
+显示版本以 app.json 为准，package.json 与锁文件的项目版本保持同步。设置页读取实际安装包版本及构建号，显示如 1.2.2 (10)。发布时核对标签、文件名、包内版本和 SHA-256；GitHub 发布不会自动更新手机中的应用。
 
 ## 自动测试
 
 ```bash
-npm test -- --runInBand
-npm run test:schema
-npm run typecheck
-npm run lint
-npm run test:assets
-npm run test:ui-assets
-npx expo-doctor
-npx expo config --type public
-npx expo export --platform android --output-dir dist
+npm run verify
+npm run verify:android-tools
+npm run verify:expo
 ```
 
-`test:schema` 检查宿主 SQLite 的迁移与 schema 契约；它不替代 Android 上的原生 SQLite 集成验证。测试范围和 Android 验证边界见 [测试说明](docs/TESTING.md)。
+`verify` 包含应用测试、schema、类型、lint、素材与发布文档检查。Windows 构建及签名审计测试需要 PowerShell 7 和 JDK 17。Expo 检查核对 SDK 依赖并导出 Android 资源。
 
 ## Android 开发构建
+
+Windows 本地构建在 SUBST 盘符下处理含中文的项目路径。Android 的 expo-file-system 和 expo-sqlite 均从源码编译，前者使用系统文件句柄兼容补丁，后者提供四种 ABI 的 SQLite 库。变更这些原生依赖后需重新构建。
 
 `npm run android` 使用 Expo 的本地 Android 工具链生成并编译 development build。普通开发构建不需要 release keystore，也不需要仓库外的签名配置。生成的 `android/`、Gradle 缓存和构建产物均被忽略，不应提交。
 

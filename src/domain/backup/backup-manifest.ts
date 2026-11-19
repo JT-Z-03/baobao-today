@@ -4,7 +4,10 @@ import type {
   BackupManifest,
   BackupManifestV2,
   BackupRecordCounts,
+  BackupRecord,
 } from './backup-types';
+import { assertBackupEntryCapacity, BACKUP_CAPACITY_LIMITS, backupUtf8ByteLength } from './backup-capacity';
+import { BACKUP_RECORD_BATCH_SIZE, finishBackupBatches } from './backup-batches';
 
 export const BACKUP_FORMAT = 'baobao-today-backup' as const;
 export const BACKUP_FORMAT_VERSION = 2 as const;
@@ -64,7 +67,9 @@ function validPath(path: string) {
 }
 
 function parseEntries(raw: unknown): BackupIntegrityEntry[] {
-  if (!Array.isArray(raw) || raw.length < 3 || raw.length > 10_003) error('invalid-manifest', '归档条目清单无效');
+  if (!Array.isArray(raw) || raw.length < 3 || raw.length > BACKUP_CAPACITY_LIMITS.entryCount) {
+    error('invalid-manifest', '归档条目清单无效');
+  }
   const seen = new Set<string>();
   const entries = raw.map((item) => {
     if (!isObject(item)) error('invalid-manifest', '归档条目无效');
@@ -144,4 +149,25 @@ export function parseBackupManifest(raw: unknown): BackupManifest {
 
 export function serializeBackupJson(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+export function serializeBackupRecords(records: readonly BackupRecord[]) {
+  return serializeBackupRecordsWithByteLength(records).content;
+}
+
+export function serializeBackupRecordsWithByteLength(records: readonly BackupRecord[]) {
+  return finishBackupBatches(serializeBackupRecordsInBatches(records));
+}
+
+export function* serializeBackupRecordsInBatches(records: readonly BackupRecord[]) {
+  const chunks: string[] = [];
+  let bytes = 3; // Brackets and trailing newline.
+  for (const record of records) {
+    const chunk = JSON.stringify(record);
+    bytes += backupUtf8ByteLength(chunk) + (chunks.length ? 1 : 0);
+    assertBackupEntryCapacity('records.json', bytes);
+    chunks.push(chunk);
+    if (chunks.length % BACKUP_RECORD_BATCH_SIZE === 0) yield;
+  }
+  return { content: `[${chunks.join(',')}]\n`, byteLength: bytes };
 }

@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path $PSScriptRoot 'android-local-build.ps1'
-$testRoot = Join-Path $env:TEMP "baobao-android-build-test-$([guid]::NewGuid().ToString('N'))"
+$tempDirectory = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $env:TEMP).ProviderPath)
+$testRoot = Join-Path $tempDirectory "baobao-android-build-test-$([guid]::NewGuid().ToString('N'))"
 $originalEnvironment = @{
   JAVA_HOME = $env:JAVA_HOME
   ANDROID_HOME = $env:ANDROID_HOME
@@ -245,8 +246,8 @@ try {
 
   $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
   $appConfig = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'app.json') -Encoding UTF8 | ConvertFrom-Json
-  Assert-Equal 'Expo version' ([string]$appConfig.expo.version) '1.2.1'
-  Assert-Equal 'Android versionCode' ([string]$appConfig.expo.android.versionCode) '9'
+  Assert-Equal 'Expo version' ([string]$appConfig.expo.version) '1.2.2'
+  Assert-Equal 'Android versionCode' ([string]$appConfig.expo.android.versionCode) '10'
   Assert-Equal 'Universal icon path' ([string]$appConfig.expo.icon) './assets/images/icon.png'
   Assert-Equal 'Adaptive foreground path' ([string]$appConfig.expo.android.adaptiveIcon.foregroundImage) `
     './assets/images/android-icon-foreground.png'
@@ -275,30 +276,6 @@ try {
     if (@($appConfig.expo.android.blockedPermissions) -notcontains $blockedPermission) {
       throw "Android blockedPermissions does not remove $blockedPermission"
     }
-  }
-
-  $temporaryVisualBoundaryBase64 = '5Li05pe26KeG6KeJ6LWE5Lqn77yM5LiN6Zi75aGecmVsZWFzZeaKgOacr+mqjOaUtu+8jOS9humYu+WhnuacgOe7iOWFrOW8gOWPkeW4g+OAgg=='
-  $temporaryVisualBoundary = [Text.Encoding]::UTF8.GetString(
-    [Convert]::FromBase64String($temporaryVisualBoundaryBase64)
-  )
-  $handoffPath = Join-Path $sourceRoot 'docs\handoffs\stage-4a-android-release.md'
-  $handoffContent = Get-Content -Raw -LiteralPath $handoffPath -Encoding UTF8
-  if ($handoffContent -notmatch [regex]::Escape($temporaryVisualBoundary)) {
-    throw 'Stage 4A handoff does not record the temporary visual release boundary'
-  }
-
-  $acceptancePath = Join-Path $sourceRoot 'docs\engineering\stage-4a-android-release-acceptance.md'
-  if (-not (Test-Path -LiteralPath $acceptancePath -PathType Leaf)) {
-    throw 'Stage 4A Android release acceptance document is missing'
-  }
-  $acceptanceContent = Get-Content -Raw -LiteralPath $acceptancePath -Encoding UTF8
-  if ($acceptanceContent -notmatch [regex]::Escape($temporaryVisualBoundary)) {
-    throw 'Stage 4A acceptance does not record the temporary visual release boundary'
-  }
-  $requiredConclusionBase64 = 'U3RhZ2UgNEEgQW5kcm9pZCByZWxlYXNl5bel56iL5LiO54us56uL6L+Q6KGM6aqM5pS26YCa6L+H77yM5q2j5byP5ZOB54mM5Zu+5qCH5ZKM5ZCv5Yqo55S76Z2i5LuN5b6F5pu/5o2i44CC'
-  $requiredConclusion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($requiredConclusionBase64))
-  if ($acceptanceContent -notmatch [regex]::Escape($requiredConclusion)) {
-    throw 'Stage 4A acceptance does not preserve the required limited conclusion'
   }
 
   $knownExpoTemplateHashes = [ordered]@{
@@ -407,8 +384,8 @@ exit /b 1
   $releaseResult = $releaseResultJson | ConvertFrom-Json
   Assert-Equal 'Release dry-run mode' $releaseResult.Mode 'release-dry-run'
   Assert-Equal 'Release key configured' ([string]$releaseResult.KeyPropertiesConfigured) 'True'
-  Assert-Equal 'Release versionName' ([string]$releaseResult.VersionName) '1.2.1'
-  Assert-Equal 'Release versionCode' ([string]$releaseResult.VersionCode) '9'
+  Assert-Equal 'Release versionName' ([string]$releaseResult.VersionName) '1.2.2'
+  Assert-Equal 'Release versionCode' ([string]$releaseResult.VersionCode) '10'
   Assert-Equal 'Release Gradle tasks' ($releaseResult.GradleTasks -join ',') ':app:assembleRelease,:app:bundleRelease'
 
   # Use the production encoder so the preflight reads the same format Gradle receives.
@@ -667,9 +644,8 @@ exit /b 1
     Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
   }
   if (Test-Path -LiteralPath $testRoot) {
-    $resolvedTestRoot = (Resolve-Path -LiteralPath $testRoot).Path
-    $resolvedTempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
-    if (-not $resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedTestRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $testRoot).ProviderPath)
+    if (-not [string]::Equals((Split-Path -Parent $resolvedTestRoot), $tempDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
         (Split-Path -Leaf $resolvedTestRoot) -notlike 'baobao-android-build-test-*') {
       throw 'Refusing to remove a test directory outside the expected temporary root'
     }

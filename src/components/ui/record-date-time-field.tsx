@@ -38,13 +38,13 @@ export function RecordDateTimeField({ label, valueMs, onChange, disabled = false
   return (
     <FormField label={label} error={error}>
       <View style={[styles.field, { backgroundColor: theme.surface, borderColor: theme.border }, stacked && styles.stacked]}>
-        <Pressable accessibilityRole="button" accessibilityLabel={dateAccessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { onActivate?.(); setPickerMode('date'); }} style={styles.date}>
+        <Pressable accessibilityRole="button" accessibilityLabel={dateAccessibilityLabel} accessibilityValue={{ text: `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日` }} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { onActivate?.(); setPickerMode('date'); }} style={styles.date}>
           <AppIcon name="calendar" size={22} color={theme.primary} />
           <ThemedText style={styles.text}>{date.getFullYear()}年{date.getMonth() + 1}月{date.getDate()}日</ThemedText>
           <AppIcon name="next" size={16} color={theme.textMuted} />
         </Pressable>
         <View style={[stacked ? styles.horizontalDivider : styles.divider, { backgroundColor: theme.divider }]} />
-        <Pressable accessibilityRole="button" accessibilityLabel={timeAccessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { onActivate?.(); setPickerMode('time'); }} style={styles.time}>
+        <Pressable accessibilityRole="button" accessibilityLabel={timeAccessibilityLabel} accessibilityValue={{ text: `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}` }} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { onActivate?.(); setPickerMode('time'); }} style={styles.time}>
           <AppIcon name="clock" size={22} color={theme.primary} />
           <ThemedText style={styles.text}>{date.getHours().toString().padStart(2, '0')}:{date.getMinutes().toString().padStart(2, '0')}</ThemedText>
           <AppIcon name="next" size={16} color={theme.textMuted} />

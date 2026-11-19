@@ -101,6 +101,22 @@ function Find-DevelopmentMarkers([string]$ArchivePath) {
   return @($found | Sort-Object)
 }
 
+function Assert-SqliteLibraries([string]$ArchivePath, [string]$LibRoot, [string[]]$RequiredAbis) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
+  try {
+    $missing = foreach ($abi in $RequiredAbis) {
+      $entry = $archive.GetEntry("$LibRoot/$abi/libexpo-sqlite.so")
+      if (-not $entry -or $entry.Length -eq 0) { $abi }
+    }
+    if ($missing) {
+      throw "$(Split-Path -Leaf $ArchivePath) missing libexpo-sqlite.so for ABI(s): $($missing -join ', ')"
+    }
+  } finally {
+    $archive.Dispose()
+  }
+}
+
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resolvedApkPath = Resolve-NormalizedPath $ApkPath 'Release APK path'
 $resolvedAabPath = Resolve-NormalizedPath $AabPath 'Release AAB path'
@@ -113,6 +129,10 @@ foreach ($artifactPath in @($resolvedApkPath, $resolvedAabPath)) {
 if (Test-PathWithin $resolvedOutputPath $sourceRoot) {
   throw 'Release audit evidence must be stored outside the source repository'
 }
+
+$releaseAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+Assert-SqliteLibraries $resolvedApkPath 'lib' $releaseAbis
+Assert-SqliteLibraries $resolvedAabPath 'base/lib' $releaseAbis
 
 $sdkInput = if (-not [string]::IsNullOrWhiteSpace($AndroidSdkRoot)) {
   $AndroidSdkRoot
@@ -251,6 +271,7 @@ $result = [ordered]@{
   CertificateSha256 = $certificateSha256
   ApkSignatureVerified = $true
   AabSignatureVerified = $true
+  SqliteAbisVerifiedInBothArtifacts = $releaseAbis
   ApkSha256 = (Get-FileHash -LiteralPath $resolvedApkPath -Algorithm SHA256).Hash.ToLowerInvariant()
   ApkBytes = (Get-Item -LiteralPath $resolvedApkPath).Length
   AabSha256 = (Get-FileHash -LiteralPath $resolvedAabPath -Algorithm SHA256).Hash.ToLowerInvariant()

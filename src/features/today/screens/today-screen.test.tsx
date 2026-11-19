@@ -1,4 +1,4 @@
-import { AppState } from 'react-native';
+import { AccessibilityInfo, AppState } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { useAppState } from '@/application/app-state/app-state-provider';
@@ -7,6 +7,12 @@ import { TodayScreen } from './today-screen';
 
 const mockPush = jest.fn();
 const mockNavigate = jest.fn();
+let mockIsFocused = true;
+const mockFocusListeners = new Set<() => void>();
+function setTestFocus(value: boolean) {
+  mockIsFocused = value;
+  mockFocusListeners.forEach((listener) => listener());
+}
 
 jest.mock('@/application/app-state/app-state-provider', () => ({ useAppState: jest.fn() }));
 jest.mock('@/components/ui/app-icon', () => ({ AppIcon: () => null }));
@@ -15,6 +21,10 @@ jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
     useRouter: () => ({ push: mockPush, navigate: mockNavigate }),
+    useIsFocused: () => React.useSyncExternalStore(
+      (listener: () => void) => { mockFocusListeners.add(listener); return () => { mockFocusListeners.delete(listener); }; },
+      () => mockIsFocused,
+    ),
     useFocusEffect: (callback: () => void | (() => void)) => React.useEffect(callback, [callback]),
   };
 });
@@ -155,6 +165,7 @@ test('without active sleep, relative feeding time keeps advancing and midnight r
   try {
     const view = await render(<TodayScreen />);
     await waitFor(() => expect(view.getByText('上次喝奶距现在 9分钟')).toBeTruthy());
+    expect(view.getByLabelText('编辑最近喝奶记录').props.accessibilityValue.text).toContain('23:50');
     expect(view.getByLabelText('今日亲喂1次，累计9分钟')).toBeTruthy();
     expect(view.queryByLabelText('今日奶量0毫升，不含亲喂')).toBeNull();
     expect(view.getByLabelText('今日小便0次，大便0次')).toBeTruthy();
@@ -164,6 +175,60 @@ test('without active sleep, relative feeding time keeps advancing and midnight r
     expect(state.peeService.getDailyCount).toHaveBeenLastCalledWith('2026-09-21');
     await view.unmount();
   } finally { jest.useRealTimers(); }
+});
+
+test('maintenance failure offers retry while the dashboard stays usable', async () => {
+  const retryMaintenance = jest.fn();
+  jest.mocked(useAppState).mockReturnValue({ ...appState(), maintenanceError: '部分本地维护尚未完成，请重试。', retryMaintenance } as never);
+  const view = await render(<TodayScreen />);
+  await waitFor(() => expect(view.getByLabelText('记录喝奶')).toBeTruthy());
+  await fireEvent.press(view.getByLabelText('重试维护'));
+  expect(retryMaintenance).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['restore', '备份恢复已完成。'],
+  ['undo', '已撤销上次恢复。'],
+] as const)('shows and announces %s completion once, only on the focused, loaded home screen', async (action, message) => {
+  const listeners = new Set<() => void>();
+  let pending: typeof action | null = action;
+  const service = {
+    getResult: () => null,
+    getCompletion: () => pending,
+    takeCompletion: () => { const value = pending; pending = null; return value; },
+    subscribeResult: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  };
+  const state = appState();
+  const data = await state.feedingService.getDashboard();
+  let finishLoad!: (result: typeof data) => void;
+  state.feedingService.getDashboard.mockImplementationOnce(() => new Promise((resolve) => { finishLoad = resolve; }));
+  jest.mocked(useAppState).mockReturnValue({ ...state, restoreService: service } as never);
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+  const previousAppState = AppState.currentState;
+  AppState.currentState = 'active';
+  try {
+    const view = await render(<TodayScreen />);
+    expect(pending).toBe(action);
+    expect(announce).not.toHaveBeenCalled();
+    await act(() => setTestFocus(false));
+    await act(() => finishLoad(data));
+    await view.findByText('今天还没有记录');
+    expect(pending).toBe(action);
+    expect(announce).not.toHaveBeenCalled();
+    await act(() => setTestFocus(true));
+    expect(await view.findByText(message)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(message);
+    await act(() => listeners.forEach((listener) => listener()));
+    await act(() => setTestFocus(false));
+    expect(view.queryByText(message)).toBeNull();
+    await act(() => setTestFocus(true));
+    expect(announce).toHaveBeenCalledTimes(1);
+    await view.unmount();
+  } finally {
+    mockIsFocused = true;
+    AppState.currentState = previousAppState;
+    announce.mockRestore();
+  }
 });
 
 test('returning to the foreground recalibrates the current day without waiting for a timer', async () => {

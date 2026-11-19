@@ -6,6 +6,12 @@
 
 ## 分层
 
+模块边界由 ESLint 检查：domain 不引用 application、features、data 或原生框架；features 通过 application 端口访问数据。`AppStateProvider` 仍为组合根，负责注入 SQLite、照片、草稿附件等具体适配器，不为这些变化增加状态库或 ORM。
+
+工作状态 SQLite schema 仍为 1，JSON 外层 `format=1` 不变，通过 `payloadVersion=1` 版本化；兼容没有该字段的历史内容。已知版本的异常草稿保留原始 JSON 值并隔离，健康条目继续使用；有隔离条时暂停草稿附件清理，未知顶层版本拒绝读取且保留原行。该工作状态不进入业务备份。
+
+恢复结果与失败后处理任务跟随稳定的操作协调器保存在内存，跨页面及服务重建仍可查看、确认和重试；不会因此承诺进程重启后保留回执。恢复提交与照片/工作状态操作保持协调器保护，页面刷新在锁外等待真实初始化结果，避免再次获取同一锁而死锁。
+
 ```mermaid
 flowchart LR
   Routes["Expo Router 路由"] --> Features["功能界面"]

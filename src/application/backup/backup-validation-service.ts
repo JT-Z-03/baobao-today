@@ -3,8 +3,10 @@ import type {
   BackupFileStore,
   BackupHashGateway,
   BackupPhotoGateway,
+  BackupProgressObserver,
   BackupRestoreWorkspace,
 } from '@/application/ports/backup';
+import { emitBackupProgress } from '@/application/ports/backup';
 import { parseBackupManifest } from '@/domain/backup/backup-manifest';
 import type { BackupData, BackupManifest } from '@/domain/backup/backup-types';
 import { countBackupRecords, validateBackupData } from '@/domain/backup/backup-validation';
@@ -55,16 +57,20 @@ function sameCounts(actual: ReturnType<typeof countBackupRecords>, expected: Bac
 }
 
 export function createBackupValidationService(dependencies: Dependencies) {
-  async function prepare(sourceArchiveUri: string, restoreSessionId: string): Promise<PreparedBackup> {
+  async function prepare(sourceArchiveUri: string, restoreSessionId: string, observer?: BackupProgressObserver): Promise<PreparedBackup> {
+    emitBackupProgress(observer, { stage: 'inspect' });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const workspace = await dependencies.fileStore.createRestoreWorkspace(restoreSessionId, sourceArchiveUri);
     try {
-      const inspection = await dependencies.archiveGateway.inspect(workspace.archiveUri);
+      const inspection = await dependencies.archiveGateway.inspect(workspace.archiveUri, ...(observer ? [observer] as const : []));
       await dependencies.fileStore.ensureAvailableSpace(
         inspection.archiveSize + inspection.totalUncompressedSize * 2 + DISK_SPACE_RESERVE_BYTES,
       );
       const paths = inspection.entries.map((entry) => entry.path);
       const targets = new Map(paths.map((path) => [path, workspace.targetUri(path)]));
-      await dependencies.archiveGateway.extract(workspace.archiveUri, targets);
+      await dependencies.archiveGateway.extract(workspace.archiveUri, targets, ...(observer ? [observer] as const : []));
+      emitBackupProgress(observer, { stage: 'validate-data' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       if (!paths.includes('manifest.json')) throw new Error('备份缺少manifest.json');
 
       const manifest = parseBackupManifest(parseJson(await workspace.readText('manifest.json'), 'manifest.json'));
@@ -109,6 +115,7 @@ export function createBackupValidationService(dependencies: Dependencies) {
       const photoUris = new Map<string, string>();
       const referencedPhotos = data.records.filter((record) => record.photo_backup_entry !== null);
       if (referencedPhotos.length !== manifest.photoCount) throw new Error('备份照片引用数量不一致');
+      emitBackupProgress(observer, { stage: 'validate-photos', completed: 0, total: referencedPhotos.length, unit: 'files' });
       for (const record of referencedPhotos) {
         const path = record.photo_backup_entry!;
         const entry = manifestByPath.get(path);
@@ -118,6 +125,7 @@ export function createBackupValidationService(dependencies: Dependencies) {
         const uri = workspace.targetUri(path);
         await dependencies.photoGateway.validateStaged(uri, entry.byteLength, entry.sha256);
         photoUris.set(path, uri);
+        emitBackupProgress(observer, { stage: 'validate-photos', completed: photoUris.size, total: referencedPhotos.length, unit: 'files' });
       }
       const manifestPhotoPaths = manifest.entries.filter((entry) => entry.path.startsWith('photos/'));
       if (manifestPhotoPaths.some((entry) => !photoUris.has(entry.path))) throw new Error('备份包含未被记录引用的照片');

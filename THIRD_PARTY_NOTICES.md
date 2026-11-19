@@ -49,6 +49,8 @@ Android bundle 还会包含 `@expo-google-fonts/material-symbols` 0.4.38 提供�
 
 ## 运行时与构建依赖
 
+两套 Expo 兼容性测试使用上游 MIT 许可的片段，许可证随源码提供。见 [expo-file-system 许可证](scripts/fixtures/expo-file-system-LICENSE)、[autolinking 许可证](scripts/fixtures/expo-modules-autolinking-57.0.18/LICENSE)及[来源和原始文件校验](scripts/fixtures/expo-modules-autolinking-57.0.18/provenance.json)。
+
 项目直接使用 Expo、React、React Native、fflate 和 `@noble/hashes` 等第三方包；它们当前的包元数据均声明为 MIT，具体版本锁定在 `package-lock.json`。`@noble/hashes` 用于完整备份保存时的分块 SHA-256 校验，版权为 Copyright (c) 2022 Paul Miller，许可证随该包提供。`npm ci` 安装的每个包仍适用其随包提供的许可证和声明。
 
 本文件不手工枚举整个 npm 依赖树，以避免与锁文件实际内容漂移。源码仓库不提交 `node_modules`。如后续发布 APK，应从用于构建该二进制的精确锁文件和已安装包重新生成并复核完整依赖许可证清单。
